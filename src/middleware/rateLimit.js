@@ -48,11 +48,17 @@ function rateLimitMiddleware(config) {
 
         if (clientData.count > config.rateLimit.maxRequests) {
             logger.warn('Rate limit exceeded', ip, 'count:', clientData.count);
-            return res.status(429).json({
+            const retryAfter = Math.ceil((clientData.windowStart + config.rateLimit.windowMs - now) / 1000);
+            res.writeHead(429, {
+                'Content-Type': 'application/json',
+                'Retry-After': retryAfter
+            });
+            res.end(JSON.stringify({
                 error: 'Too Many Requests',
                 message: 'Rate limit exceeded. Please try again later.',
-                retryAfter: Math.ceil((clientData.windowStart + config.rateLimit.windowMs - now) / 1000)
-            });
+                retryAfter: retryAfter
+            }));
+            return;
         }
 
         next();

@@ -22,14 +22,19 @@ class LLMService {
      */
     makeRequest(payload) {
         return new Promise((resolve, reject) => {
-            const url = new URL('/chat/completions', this.baseUrl);
-            const isHttps = url.protocol === 'https:';
+            const baseUrlObj = new URL(this.baseUrl);
+            const isHttps = baseUrlObj.protocol === 'https:';
             const httpModule = isHttps ? https : http;
 
+            let requestPath = baseUrlObj.pathname;
+            if (!requestPath.endsWith('/chat/completions')) {
+                requestPath = requestPath.replace(/\/$/, '') + '/chat/completions';
+            }
+
             const options = {
-                hostname: url.hostname,
-                port: url.port || (isHttps ? 443 : 80),
-                path: url.pathname,
+                hostname: baseUrlObj.hostname,
+                port: baseUrlObj.port || (isHttps ? 443 : 80),
+                path: requestPath,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -37,6 +42,8 @@ class LLMService {
                 },
                 timeout: this.timeout
             };
+
+            logger.debug('LLM request URL:', `${options.hostname}${options.path}`);
 
             const req = httpModule.request(options, (res) => {
                 let data = '';

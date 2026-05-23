@@ -12,32 +12,45 @@ const MAX_BODY_SIZE = 1024 * 1024;
 const MAX_PROMPT_LENGTH = 5000;
 
 function validatorMiddleware(req, res, next) {
-    // Check Content-Type for API routes
-    if (req.path.startsWith('/api/') && req.method === 'POST') {
+    const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
+
+    if (pathname.startsWith('/api/') && req.method === 'POST') {
         const contentType = req.headers['content-type'] || '';
 
         if (!contentType.includes('application/json')) {
-            return res.status(415).json({
+            if (res.status && typeof res.status === 'function') {
+                return res.status(415).json({
+                    error: 'Unsupported Media Type',
+                    message: 'Content-Type must be application/json'
+                });
+            }
+            res.writeHead(415, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
                 error: 'Unsupported Media Type',
                 message: 'Content-Type must be application/json'
-            });
+            }));
+            return;
         }
     }
 
-    // Check body size
     const contentLength = parseInt(req.headers['content-length'] || '0');
     if (contentLength > MAX_BODY_SIZE) {
-        logger.warn('Request body too large', req.path, 'size:', contentLength);
-        return res.status(413).json({
+        logger.warn('Request body too large', pathname, 'size:', contentLength);
+        if (res.status && typeof res.status === 'function') {
+            return res.status(413).json({
+                error: 'Payload Too Large',
+                message: 'Request body exceeds 1MB limit'
+            });
+        }
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
             error: 'Payload Too Large',
             message: 'Request body exceeds 1MB limit'
-        });
+        }));
+        return;
     }
 
-    // Validate prompt length in body
-    if (req.method === 'POST' && req.path === '/api/generate') {
-        // Body will be parsed by JSON parser middleware, validate after
-        // This is handled in the route handler after body parsing
+    if (req.method === 'POST' && pathname === '/api/generate') {
     }
 
     next();

@@ -6,26 +6,40 @@
 const logger = require('../utils/logger');
 
 function errorHandler(err, req, res, next) {
-    // Log the error
     logger.error('Unhandled error:', err.message, 'stack:', err.stack);
 
-    // Determine if we're in production
     const isProduction = process.env.NODE_ENV === 'production';
 
-    // Don't expose details in production
     if (isProduction) {
-        return res.status(500).json({
+        if (res.status && typeof res.status === 'function') {
+            return res.status(500).json({
+                error: 'Internal Server Error',
+                message: 'An unexpected error occurred. Please try again later.'
+            });
+        }
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
             error: 'Internal Server Error',
             message: 'An unexpected error occurred. Please try again later.'
-        });
+        }));
+        return;
     }
 
-    // Development: show more details
-    res.status(err.status || 500).json({
-        error: err.name || 'Error',
-        message: err.message,
-        stack: err.stack
-    });
+    const statusCode = err.status || 500;
+    if (res.status && typeof res.status === 'function') {
+        res.status(statusCode).json({
+            error: err.name || 'Error',
+            message: err.message,
+            stack: err.stack
+        });
+    } else {
+        res.writeHead(statusCode, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            error: err.name || 'Error',
+            message: err.message,
+            stack: err.stack
+        }));
+    }
 }
 
 module.exports = errorHandler;

@@ -10,7 +10,8 @@ const state = {
     apiKey: localStorage.getItem('api_key') || '',
     theme: localStorage.getItem('theme') || 'dark',
     zoom: 1,
-    isGenerating: false
+    isGenerating: false,
+    serverAuthEnabled: false
 };
 
 // DOM Elements
@@ -76,7 +77,7 @@ async function generateFlowchart() {
         return;
     }
 
-    if (!state.apiKey) {
+    if (state.serverAuthEnabled && !state.apiKey) {
         showToast('请先设置 API Key', 'error');
         openSettings();
         return;
@@ -91,12 +92,17 @@ async function generateFlowchart() {
     updateCodeStatus('生成中...', 'loading');
 
     try {
+        const headers = {
+            'Content-Type': 'application/json'
+        };
+
+        if (state.serverAuthEnabled && state.apiKey) {
+            headers['X-API-Key'] = state.apiKey;
+        }
+
         const response = await fetch('/api/generate', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-API-Key': state.apiKey
-            },
+            headers: headers,
             body: JSON.stringify({
                 prompt: prompt,
                 mermaid: state.mermaidCode || undefined
@@ -203,6 +209,8 @@ async function loadConfig() {
     try {
         const response = await fetch('/api/config');
         const config = await response.json();
+
+        state.serverAuthEnabled = config.auth?.enabled || false;
 
         if (config.auth && config.auth.enabled) {
             elements.apiConfig.textContent = 'API 认证: 已启用';

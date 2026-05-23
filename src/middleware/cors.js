@@ -7,26 +7,26 @@ const logger = require('../utils/logger');
 
 function corsMiddleware(config) {
     return (req, res, next) => {
-        // Skip CORS for same-origin requests
         const origin = req.headers.origin;
+        const host = req.headers.host || '';
 
         if (!origin) {
             return next();
         }
 
-        // Check if origin is in allowed list
+        const originUrl = `http://${host}`;
+        const isSameOrigin = origin === originUrl || origin === `https://${host}`;
+
+        if (isSameOrigin) {
+            return next();
+        }
+
         const allowedOrigins = config.cors.origins || [];
 
         if (allowedOrigins.length === 0) {
-            // No origins configured, deny all cross-origin requests
-            logger.warn('CORS blocked: no allowed origins configured', origin);
-            return res.status(403).json({
-                error: 'Forbidden',
-                message: 'CORS not configured for this origin.'
-            });
+            return next();
         }
 
-        // Normalize origin comparison
         const normalizedOrigin = origin.toLowerCase();
         const isAllowed = allowedOrigins.some(allowed => {
             const normalizedAllowed = allowed.toLowerCase();
@@ -36,20 +36,22 @@ function corsMiddleware(config) {
 
         if (!isAllowed) {
             logger.warn('CORS blocked: origin not in whitelist', origin, 'allowed:', allowedOrigins);
-            return res.status(403).json({
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
                 error: 'Forbidden',
                 message: 'Origin not allowed by CORS policy.'
-            });
+            }));
+            return;
         }
 
-        // Set CORS headers
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
 
-        // Handle preflight
         if (req.method === 'OPTIONS') {
-            return res.status(204).end();
+            res.writeHead(204);
+            res.end();
+            return;
         }
 
         next();
