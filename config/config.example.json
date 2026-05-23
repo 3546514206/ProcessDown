@@ -1,0 +1,25 @@
+{
+  "server": {
+    "port": 3000,
+    "timeout": 120
+  },
+  "cors": {
+    "enabled": true,
+    "origins": ["${ALLOWED_ORIGINS}"],
+    "originsSeparator": ","
+  },
+  "rateLimit": {
+    "enabled": true,
+    "maxRequests": 100,
+    "windowMs": 60000
+  },
+  "llm": {
+    "timeout": 120,
+    "temperature": 0.3,
+    "maxTokens": 2000
+  },
+  "logging": {
+    "level": "info",
+    "maskSensitive": true
+  }
+}

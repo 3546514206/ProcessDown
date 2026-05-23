@@ -1,0 +1,21 @@
+{
+  "name": "processdown",
+  "version": "1.0.0",
+  "description": "AI-driven natural language flowchart generation tool",
+  "main": "src/server/index.js",
+  "scripts": {
+    "start": "node src/server/index.js",
+    "dev": "node src/server/index.js"
+  },
+  "keywords": [
+    "mermaid",
+    "flowchart",
+    "ai",
+    "diagram"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}

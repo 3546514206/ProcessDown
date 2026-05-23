@@ -1,0 +1,130 @@
+/**
+ * Flowchart Generator Service
+ * Orchestrates the generation of Mermaid code from natural language
+ */
+
+const logger = require('../utils/logger');
+const LLMService = require('./llm');
+const { extractMermaidCode, validateMermaidCode } = require('./extractor');
+const fs = require('fs');
+const path = require('path');
+
+class GeneratorService {
+    constructor(config) {
+        this.llm = new LLMService(config);
+        this.systemPrompt = this.loadSystemPrompt();
+    }
+
+    /**
+     * Load system prompt from file
+     */
+    loadSystemPrompt() {
+        const promptPath = path.join(process.cwd(), 'prompts', 'system.txt');
+        try {
+            if (fs.existsSync(promptPath)) {
+                return fs.readFileSync(promptPath, 'utf-8');
+            }
+        } catch (e) {
+            logger.warn('Could not load system prompt:', e.message);
+        }
+
+        // Default system prompt
+        return `You are an expert at generating Mermaid diagrams from natural language descriptions.
+
+Generate ONLY Mermaid code, no explanations. The code should be complete and renderable.
+
+Supported diagram types:
+- flowchart (default): for processes and workflows
+- sequenceDiagram: for interactions between actors
+- stateDiagram-v2: for state machines
+- classDiagram: for class structures
+- erDiagram: for database entity relationships
+- gantt: for project timelines
+- pie: for data visualization
+- requirementDiagram: for requirements tracking
+- gitGraph: for git history
+- journey: for user journeys
+
+Start with the appropriate diagram type keyword followed by the content.
+Do not wrap the code in markdown fences unless specifically asked.
+
+Examples:
+flowchart TD
+    A[Start] --> B[Process]
+    B --> C{Decision}
+    C -->|Yes| D[Action 1]
+    C -->|No| E[Action 2]
+
+sequenceDiagram
+    participant U as User
+    participant S as System
+    U->>S: Request
+    S-->>U: Response`;
+    }
+
+    /**
+     * Generate Mermaid code from natural language
+     */
+    async generate(prompt, currentMermaid = null) {
+        logger.info('Generating Mermaid code for prompt:', prompt.substring(0, 100));
+
+        const messages = [];
+
+        // Add current Mermaid context if available (for iterative modifications)
+        if (currentMermaid) {
+            messages.push({
+                role: 'user',
+                content: `Current diagram:\n\`\`\`mermaid\n${currentMermaid}\n\`\`\`\n\nModify the above diagram according to: ${prompt}`
+            });
+        } else {
+            messages.push({
+                role: 'user',
+                content: prompt
+            });
+        }
+
+        try {
+            const response = await this.llm.chat(messages, this.systemPrompt);
+            const extractedCode = extractMermaidCode(response);
+
+            if (!extractedCode) {
+                throw new Error('Could not extract Mermaid code from LLM response');
+            }
+
+            logger.info('Successfully generated Mermaid code, length:', extractedCode.length);
+            return extractedCode;
+
+        } catch (error) {
+            logger.error('Generation failed:', error.message);
+            throw error;
+        }
+    }
+
+    /**
+     * Regenerate from current Mermaid code
+     */
+    async regenerate(mermaid, instruction) {
+        logger.info('Regenerating with instruction:', instruction.substring(0, 100));
+
+        const messages = [{
+            role: 'user',
+            content: `Current diagram:\n\`\`\`mermaid\n${mermaid}\n\`\`\`\n\n${instruction}`
+        }];
+
+        try {
+            const response = await this.llm.chat(messages, this.systemPrompt);
+            const extractedCode = extractMermaidCode(response);
+
+            if (!extractedCode) {
+                throw new Error('Could not extract Mermaid code from LLM response');
+            }
+
+            return extractedCode;
+        } catch (error) {
+            logger.error('Regeneration failed:', error.message);
+            throw error;
+        }
+    }
+}
+
+module.exports = GeneratorService;
