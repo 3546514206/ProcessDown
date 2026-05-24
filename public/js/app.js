@@ -7,11 +7,9 @@
 const state = {
     mermaidCode: '',
     history: [],
-    apiKey: localStorage.getItem('api_key') || '',
     theme: localStorage.getItem('theme') || 'dark',
     zoom: 1,
-    isGenerating: false,
-    serverAuthEnabled: false
+    isGenerating: false
 };
 
 // DOM Elements
@@ -24,12 +22,6 @@ const elements = {
     statusText: document.getElementById('status-text'),
     codeStatus: document.getElementById('code-status'),
     toastContainer: document.getElementById('toast-container'),
-    settingsModal: document.getElementById('settings-modal'),
-    settingApiKey: document.getElementById('setting-api-key'),
-    settingTheme: document.getElementById('setting-theme'),
-    btnSettings: document.getElementById('btn-settings'),
-    btnCloseSettings: document.getElementById('btn-close-settings'),
-    btnSaveSettings: document.getElementById('btn-save-settings'),
     apiConfig: document.getElementById('api-config')
 };
 
@@ -77,12 +69,6 @@ async function generateFlowchart() {
         return;
     }
 
-    if (state.serverAuthEnabled && !state.apiKey) {
-        showToast('请先设置 API Key', 'error');
-        openSettings();
-        return;
-    }
-
     state.isGenerating = true;
     elements.btnGenerate.disabled = true;
     elements.btnGenerate.querySelector('.btn-text').style.display = 'none';
@@ -94,17 +80,11 @@ async function generateFlowchart() {
     let responseData = null;
 
     try {
-        const headers = {
-            'Content-Type': 'application/json'
-        };
-
-        if (state.serverAuthEnabled && state.apiKey) {
-            headers['X-API-Key'] = state.apiKey;
-        }
-
         const response = await fetch('/api/generate', {
             method: 'POST',
-            headers: headers,
+            headers: {
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify({
                 prompt: prompt,
                 mermaid: state.mermaidCode || undefined
@@ -127,7 +107,6 @@ async function generateFlowchart() {
         updateCodeStatus('已生成', 'ready');
         showToast('流程图已生成', 'success');
 
-        // Render the diagram
         if (window.mermaidRender) {
             window.mermaidRender.render(data.mermaid);
         }
@@ -178,43 +157,6 @@ async function copyCode() {
     }
 }
 
-// Settings
-function openSettings() {
-    elements.settingsModal.style.display = 'block';
-    elements.settingApiKey.value = state.apiKey;
-    elements.settingTheme.value = state.theme;
-}
-
-function closeSettings() {
-    elements.settingsModal.style.display = 'none';
-}
-
-function saveSettings() {
-    const oldTheme = state.theme;
-
-    state.apiKey = elements.settingApiKey.value.trim();
-    state.theme = elements.settingTheme.value;
-
-    if (state.apiKey) {
-        localStorage.setItem('api_key', state.apiKey);
-    } else {
-        localStorage.removeItem('api_key');
-    }
-
-    localStorage.setItem('theme', state.theme);
-
-    if (window.components) {
-        window.components.setTheme(state.theme);
-    }
-
-    if (state.theme !== oldTheme) {
-        reinitMermaid();
-    }
-
-    closeSettings();
-    showToast('设置已保存', 'success');
-}
-
 function reinitMermaid() {
     mermaid.initialize({
         startOnLoad: false,
@@ -237,12 +179,10 @@ async function loadConfig() {
         const response = await fetch('/api/config');
         const config = await response.json();
 
-        state.serverAuthEnabled = config.auth?.enabled || false;
-
-        if (config.auth && config.auth.enabled) {
-            elements.apiConfig.textContent = 'API 认证: 已启用';
+        if (config.llm?.model) {
+            elements.apiConfig.textContent = `模型: ${config.llm.model}`;
         } else {
-            elements.apiConfig.textContent = 'API 认证: 未启用';
+            elements.apiConfig.textContent = '就绪';
         }
     } catch (error) {
         console.error('Failed to load config:', error);
@@ -271,7 +211,6 @@ const handleCodeChange = debounce(() => {
 
 // Keyboard shortcuts
 function handleKeydown(e) {
-    // Ctrl+Enter: Generate
     if (e.ctrlKey && e.key === 'Enter') {
         e.preventDefault();
         if (!state.isGenerating) {
@@ -282,30 +221,11 @@ function handleKeydown(e) {
 
 // Event Listeners
 function initEventListeners() {
-    // Generate button
     elements.btnGenerate.addEventListener('click', generateFlowchart);
-
-    // Clear button
     elements.btnClear.addEventListener('click', clearAll);
-
-    // Copy button
     elements.btnCopy.addEventListener('click', copyCode);
-
-    // Code editor changes
     elements.codeEditor.addEventListener('input', handleCodeChange);
-
-    // Settings
-    elements.btnSettings.addEventListener('click', openSettings);
-    elements.btnCloseSettings.addEventListener('click', closeSettings);
-    elements.btnSaveSettings.addEventListener('click', saveSettings);
-
-    // Close modal on backdrop click
-    elements.settingsModal.querySelector('.modal-backdrop').addEventListener('click', closeSettings);
-
-    // Keyboard shortcuts
     document.addEventListener('keydown', handleKeydown);
-
-    // Ctrl+Enter to generate
     elements.inputPrompt.addEventListener('keydown', (e) => {
         if (e.ctrlKey && e.key === 'Enter') {
             e.preventDefault();
@@ -327,7 +247,6 @@ function init() {
 // Start when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
 
-// Export for global access
 window.app = {
     state,
     generateFlowchart,
