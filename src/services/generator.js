@@ -70,16 +70,15 @@ sequenceDiagram
 
         const messages = [];
 
-        // Add current Mermaid context if available (for iterative modifications)
         if (currentMermaid) {
             messages.push({
                 role: 'user',
-                content: `Current diagram:\n\`\`\`mermaid\n${currentMermaid}\n\`\`\`\n\nModify the above diagram according to: ${prompt}`
+                content: `Current diagram:\n\`\`\`mermaid\n${currentMermaid}\n\`\`\`\n\n请根据以下要求修改图表，只输出 Mermaid 代码：${prompt}`
             });
         } else {
             messages.push({
                 role: 'user',
-                content: prompt
+                content: `请根据以下描述生成 Mermaid 流程图代码。只输出代码，不要任何其他内容：\n\n${prompt}`
             });
         }
 
@@ -88,6 +87,7 @@ sequenceDiagram
             const extractedCode = extractMermaidCode(response);
 
             if (!extractedCode) {
+                logger.warn('LLM response did not contain Mermaid code. Raw response:', response.substring(0, 500));
                 throw new Error('Could not extract Mermaid code from LLM response');
             }
 

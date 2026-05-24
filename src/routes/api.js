@@ -78,7 +78,8 @@ function createRouter(config) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
                     error: 'Generation Failed',
-                    message: error.message
+                    message: error.message,
+                    hint: '请确保输入的是流程图描述（如"用户登录流程"），而非对话内容'
                 }));
             }
         },

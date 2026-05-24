@@ -91,6 +91,8 @@ async function generateFlowchart() {
     updateStatus('生成中...', 'loading');
     updateCodeStatus('生成中...', 'loading');
 
+    let responseData = null;
+
     try {
         const headers = {
             'Content-Type': 'application/json'
@@ -110,6 +112,7 @@ async function generateFlowchart() {
         });
 
         const data = await response.json();
+        responseData = data;
 
         if (!response.ok) {
             throw new Error(data.message || '生成失败');
@@ -133,7 +136,10 @@ async function generateFlowchart() {
         console.error('Generation error:', error);
         updateStatus('生成失败', 'error');
         updateCodeStatus('错误', 'error');
-        showToast(error.message, 'error');
+
+        const msg = error.message || '生成失败';
+        const hint = responseData?.hint || '';
+        showToast(hint ? `${msg}。${hint}` : msg, 'error');
     } finally {
         state.isGenerating = false;
         elements.btnGenerate.disabled = false;
