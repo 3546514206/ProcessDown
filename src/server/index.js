@@ -148,6 +148,10 @@ const server = http.createServer(async (req, res) => {
                     api.health(req, res);
                     break;
 
+                case '/api/export/png':
+                    await api.exportPng(req, res);
+                    break;
+
                 default:
                     res.writeHead(404, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: 'Not Found' }));

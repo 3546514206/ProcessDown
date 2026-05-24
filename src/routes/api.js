@@ -6,10 +6,12 @@
 const url = require('url');
 const logger = require('../utils/logger');
 const GeneratorService = require('../services/generator');
+const ExportService = require('../services/export');
 const { validateGenerateRequest } = require('../middleware/validator');
 
 function createRouter(config) {
     const generator = new GeneratorService(config);
+    const exportService = new ExportService(config);
 
     // Store conversation history per session (in-memory, use Redis for production)
     const conversations = new Map();
@@ -166,6 +168,55 @@ function createRouter(config) {
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({
                     error: 'Regeneration Failed',
+                    message: error.message
+                }));
+            }
+        },
+
+        /**
+         * POST /api/export/png
+         * Export SVG to PNG on the server side
+         */
+        async exportPng(req, res) {
+            try {
+                const body = req.body || {};
+
+                if (!body.svg) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        error: 'Validation Error',
+                        message: '"svg" field is required'
+                    }));
+                    return;
+                }
+
+                if (body.svg.length > 500000) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        error: 'Validation Error',
+                        message: 'SVG exceeds maximum size of 500KB'
+                    }));
+                    return;
+                }
+
+                const scale = Math.min(Math.max(parseInt(body.scale) || 1, 1), 4);
+                const bgType = body.bg || 'dark';
+                const bgColor = exportService.parseBackgroundColor(bgType);
+
+                const pngBuffer = await exportService.svgToPng(body.svg, scale, bgColor);
+
+                res.writeHead(200, {
+                    'Content-Type': 'image/png',
+                    'Content-Length': pngBuffer.length,
+                    'Content-Disposition': `attachment; filename="flowchart-${Date.now()}-${scale}x.png"`
+                });
+                res.end(pngBuffer);
+
+            } catch (error) {
+                logger.error('Export PNG error:', error.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Export Failed',
                     message: error.message
                 }));
             }

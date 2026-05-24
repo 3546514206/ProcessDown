@@ -1,6 +1,6 @@
 /**
  * Export functionality
- * Handles PNG and SVG export
+ * Handles PNG and SVG export using server-side rendering
  */
 
 const exportModule = {
@@ -16,13 +16,12 @@ const exportModule = {
         btnExportSvg.addEventListener('click', () => this.exportSVG());
     },
 
-    getSvgElement() {
-        const container = document.getElementById('mermaid-container');
-        return container ? container.querySelector('svg') : null;
-    },
-
     getSvgString() {
-        const svg = this.getSvgElement();
+        if (window.mermaidRender) {
+            return window.mermaidRender.getSvg();
+        }
+        const container = document.getElementById('mermaid-container');
+        const svg = container ? container.querySelector('svg') : null;
         return svg ? svg.outerHTML : null;
     },
 
@@ -47,67 +46,53 @@ const exportModule = {
     },
 
     async exportPNG(scale = 1) {
-        const svg = this.getSvgElement();
+        const svgString = this.getSvgString();
 
-        if (!svg) {
+        if (!svgString) {
             window.app.showToast('没有可导出的图表', 'warning');
             return;
         }
 
         try {
-            // Create canvas
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+            const theme = localStorage.getItem('theme') || 'dark';
 
-            // Get SVG dimensions
-            const bbox = svg.getBoundingClientRect();
-            const width = bbox.width * scale;
-            const height = bbox.height * scale;
+            const response = await fetch('/api/export/png', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    svg: svgString,
+                    scale: scale,
+                    bg: theme
+                })
+            });
 
-            canvas.width = width;
-            canvas.height = height;
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.message || '导出失败');
+            }
 
-            // Create image from SVG
-            const svgData = new XMLSerializer().serializeToString(svg);
-            const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-            const url = URL.createObjectURL(svgBlob);
+            const blob = await response.blob();
 
-            const img = new Image();
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            link.download = `flowchart-${Date.now()}-${scale}x.png`;
+            link.click();
 
-            img.onload = () => {
-                // Draw white background
-                ctx.fillStyle = '#ffffff';
-                ctx.fillRect(0, 0, width, height);
-
-                // Draw SVG
-                ctx.drawImage(img, 0, 0, width, height);
-
-                // Export
-                canvas.toBlob((blob) => {
-                    const link = document.createElement('a');
-                    link.href = URL.createObjectURL(blob);
-                    link.download = `flowchart-${Date.now()}-${scale}x.png`;
-                    link.click();
-
-                    URL.revokeObjectURL(url);
-                    window.app.showToast(`PNG 已导出 (${scale}x)`, 'success');
-                }, 'image/png');
-            };
-
-            img.onerror = () => {
-                throw new Error('Failed to load SVG');
-            };
-
-            img.src = url;
+            URL.revokeObjectURL(link.href);
+            window.app.showToast(`PNG 已导出 (${scale}x)`, 'success');
 
         } catch (error) {
             console.error('Export PNG error:', error);
-            window.app.showToast('导出 PNG 失败', 'error');
+            window.app.showToast('导出 PNG 失败: ' + error.message, 'error');
         }
     },
 
     showExportOptions() {
-        // Create a simple options menu
+        const existingMenu = document.querySelector('.export-menu');
+        if (existingMenu) existingMenu.remove();
+
         const menu = document.createElement('div');
         menu.className = 'export-menu';
         menu.innerHTML = `
@@ -117,64 +102,36 @@ const exportModule = {
             <div class="export-menu-item" data-scale="4">4x (4K)</div>
         `;
 
-        // Style
-        menu.style.cssText = `
-            position: fixed;
-            background: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 4px;
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        `;
-
-        document.querySelectorAll('.export-menu-item').forEach(item => {
-            item.style.cssText = `
-                padding: 8px 16px;
-                cursor: pointer;
-                border-radius: 4px;
-                font-size: 13px;
-            `;
-            item.addEventListener('mouseenter', () => {
-                item.style.background = 'var(--bg-tertiary)';
-            });
-            item.addEventListener('mouseleave', () => {
-                item.style.background = 'transparent';
-            });
-        });
-
-        // Position near button
         const btn = document.getElementById('btn-export-png');
         const rect = btn.getBoundingClientRect();
         menu.style.top = `${rect.bottom + 5}px`;
         menu.style.left = `${rect.left}px`;
 
-        // Handle click
-        menu.addEventListener('click', (e) => {
-            const scale = e.target.dataset.scale;
-            if (scale) {
-                this.exportPNG(parseInt(scale));
-                menu.remove();
-            }
-        });
+        document.body.appendChild(menu);
 
-        // Close on click outside
         const closeMenu = (e) => {
-            if (!menu.contains(e.target)) {
-                menu.remove();
-                document.removeEventListener('click', closeMenu);
-            }
+            if (menu.contains(e.target)) return;
+            menu.remove();
+            document.removeEventListener('click', closeMenu);
         };
 
-        document.addEventListener('click', closeMenu);
-        document.body.appendChild(menu);
+        setTimeout(() => {
+            document.addEventListener('click', closeMenu);
+        }, 10);
+
+        menu.addEventListener('click', (e) => {
+            const item = e.target.closest('.export-menu-item');
+            if (!item) return;
+            const scale = parseInt(item.dataset.scale) || 1;
+            document.removeEventListener('click', closeMenu);
+            menu.remove();
+            this.exportPNG(scale);
+        });
     }
 };
 
-// Initialize on load
 document.addEventListener('DOMContentLoaded', () => {
     exportModule.init();
 });
 
-// Export for global access
 window.exportModule = exportModule;
