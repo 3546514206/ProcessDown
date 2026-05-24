@@ -37,7 +37,7 @@ const elements = {
 function initMermaid() {
     mermaid.initialize({
         startOnLoad: false,
-        theme: 'default',
+        theme: state.theme === 'light' ? 'default' : 'dark',
         securityLevel: 'loose',
         flowchart: {
             useMaxWidth: true,
@@ -184,6 +184,8 @@ function closeSettings() {
 }
 
 function saveSettings() {
+    const oldTheme = state.theme;
+
     state.apiKey = elements.settingApiKey.value.trim();
     state.theme = elements.settingTheme.value;
 
@@ -195,13 +197,32 @@ function saveSettings() {
 
     localStorage.setItem('theme', state.theme);
 
-    // Apply theme
     if (window.components) {
         window.components.setTheme(state.theme);
     }
 
+    if (state.theme !== oldTheme) {
+        reinitMermaid();
+    }
+
     closeSettings();
     showToast('设置已保存', 'success');
+}
+
+function reinitMermaid() {
+    mermaid.initialize({
+        startOnLoad: false,
+        theme: state.theme === 'light' ? 'default' : 'dark',
+        securityLevel: 'loose',
+        flowchart: {
+            useMaxWidth: true,
+            htmlLabels: true
+        }
+    });
+
+    if (state.mermaidCode && window.mermaidRender) {
+        window.mermaidRender.render(state.mermaidCode);
+    }
 }
 
 // Load config from server
@@ -307,5 +328,6 @@ window.app = {
     clearAll,
     copyCode,
     showToast,
-    updateStatus
+    updateStatus,
+    reinitMermaid
 };

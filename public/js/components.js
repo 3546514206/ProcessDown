@@ -148,6 +148,7 @@ const components = {
     },
 
     setTheme(theme) {
+        const oldTheme = this.theme;
         this.theme = theme;
         localStorage.setItem('theme', theme);
 
@@ -164,11 +165,14 @@ const components = {
 
         this.updateBgButtons();
 
-        // Also update preview area background
         if (this.previewArea) {
             this.previewArea.style.background = theme === 'transparent'
                 ? 'repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 50% / 20px 20px'
-                : (theme === 'dark' ? '#1a1a2e' : '#ffffff');
+                : (theme === 'dark' ? '#1a1a2e' : '#f5f5f5');
+        }
+
+        if (theme !== oldTheme && window.app && window.app.reinitMermaid) {
+            window.app.reinitMermaid();
         }
     },
 
