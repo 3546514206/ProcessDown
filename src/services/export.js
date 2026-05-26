@@ -4,8 +4,27 @@
  * Uses sharp library for image processing
  */
 
-const sharp = require('sharp');
 const logger = require('../utils/logger');
+
+let _sharp = null;
+let _sharpError = null;
+
+function getSharp() {
+    if (_sharp !== null) return _sharp;
+    if (_sharpError !== null) throw _sharpError;
+    try {
+        _sharp = require('sharp');
+        return _sharp;
+    } catch (err) {
+        _sharpError = new Error(
+            'sharp module is not available. Please install it for your platform:\n' +
+            '  npm install --os=linux --cpu=x64 sharp   (Linux x64)\n' +
+            '  npm install --os=win32 --cpu=x64 sharp   (Windows x64)\n' +
+            '  npm install sharp                         (current platform)'
+        );
+        throw _sharpError;
+    }
+}
 
 class ExportService {
     constructor(config) {
@@ -13,6 +32,8 @@ class ExportService {
     }
 
     async svgToPng(svgString, scale = 1, bgColor = '#ffffff') {
+        const sharp = getSharp();
+
         return new Promise((resolve, reject) => {
             if (!svgString || typeof svgString !== 'string') {
                 reject(new Error('Invalid SVG string'));

@@ -193,6 +193,34 @@ ProcessDown/
 - **图表**：Mermaid.js
 - **AI**：OpenAI 兼容 API 格式
 
+## 跨平台部署说明
+
+项目依赖 [sharp](https://sharp.pixelplumbing.com/) 用于 PNG 导出功能。sharp 是**原生模块**，包含平台相关的编译二进制文件。
+
+如果你在 **Windows** 上安装依赖后，将 `node_modules` 一起拷贝到 **Linux** 服务器运行，会遇到以下错误：
+
+```
+Error: Could not load the "sharp" module using the linux-x64 runtime
+```
+
+### 解决方法
+
+在目标服务器上删除原有的 `node_modules`，然后重新安装依赖即可：
+
+```bash
+# 删除原有的 node_modules（包含 Windows 平台的 sharp 二进制）
+rm -rf node_modules
+
+# 重新安装全部依赖（会自动安装当前平台的 sharp）
+npm install
+
+# 如果只需要重新安装 sharp，也可以单独指定平台
+npm install --os=linux --cpu=x64 sharp
+```
+
+> 项目已对 sharp 做了延迟加载处理，即使 sharp 暂时不可用，服务器的其他功能（流程图生成、SVG 导出等）仍可正常使用，仅 PNG 导出功能会返回错误提示。
+
 ## 环境要求
 
-- Node.js >= 14.0.0
+- Node.js >= 18.0.0
+- sharp（PNG 导出必需，需安装对应平台版本）
