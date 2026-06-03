@@ -187,8 +187,10 @@ const server = http.createServer(async (req, res) => {
 // Start server
 const PORT = config.server.port;
 
-server.listen(PORT, () => {
-    logger.info(`🚀 ProcessDown server running on port ${PORT}`);
+const HOST = config.server.host || '0.0.0.0';
+
+server.listen(PORT, HOST, () => {
+    logger.info(`🚀 ProcessDown server running on http://${HOST}:${PORT}`);
     logger.info(`   Environment: ${process.env.NODE_ENV || 'development'}`);
     logger.info(`   Auth enabled: ${config.auth.enabled}`);
     logger.info(`   CORS origins: ${config.cors.origins.join(', ') || 'none'}`);
