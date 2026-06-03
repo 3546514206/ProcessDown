@@ -35,6 +35,36 @@ load_env() {
     fi
 }
 
+backup_run() {
+    local has_files=false
+
+    if [ -f "$PID_FILE" ]; then
+        has_files=true
+    fi
+    if [ -f "$LOG_FILE" ]; then
+        has_files=true
+    fi
+
+    if [ "$has_files" = false ]; then
+        return 0
+    fi
+
+    local backup_dir="$RUN_DIR/$(date '+%Y%m%d%H%M%S')"
+    mkdir -p "$backup_dir"
+
+    if [ -f "$PID_FILE" ]; then
+        cp -f "$PID_FILE" "$backup_dir/"
+        rm -f "$PID_FILE"
+    fi
+
+    if [ -f "$LOG_FILE" ]; then
+        cp -f "$LOG_FILE" "$backup_dir/"
+        rm -f "$LOG_FILE"
+    fi
+
+    echo -e "${YELLOW}已备份旧运行文件到: $backup_dir${NC}"
+}
+
 validate_config() {
     # 检查 Node.js
     if ! command -v node &> /dev/null; then
@@ -121,6 +151,8 @@ do_start() {
         return 0
     fi
 
+    backup_run
+
     check_port || return 1
 
     echo -e "${GREEN}启动服务中...${NC}"
@@ -188,8 +220,6 @@ stop_process() {
 }
 
 do_stop() {
-    rm -f "$PID_FILE"
-
     # 优先通过 PID 文件停止
     if [ -f "$PID_FILE" ]; then
         local pid

@@ -73,45 +73,119 @@ function isMermaidCode(text) {
 
 /**
  * Validate Mermaid code syntax
- * Basic validation for common syntax issues
+ * Checks for common syntax issues and unsafe characters
  */
 function validateMermaidCode(code) {
     const errors = [];
+    const warnings = [];
 
     if (!code || typeof code !== 'string') {
         errors.push('Code is empty or not a string');
-        return { valid: false, errors };
+        return { valid: false, errors, warnings };
     }
 
-    // Check for balanced brackets
     const openBrackets = (code.match(/\[/g) || []).length;
     const closeBrackets = (code.match(/\]/g) || []).length;
     if (openBrackets !== closeBrackets) {
         errors.push('Unbalanced square brackets');
     }
 
-    // Check for balanced parentheses
     const openParens = (code.match(/\(/g) || []).length;
     const closeParens = (code.match(/\)/g) || []).length;
     if (openParens !== closeParens) {
         errors.push('Unbalanced parentheses');
     }
 
-    // Check for balanced braces
     const openBraces = (code.match(/\{/g) || []).length;
     const closeBraces = (code.match(/\}/g) || []).length;
     if (openBraces !== closeBraces) {
         errors.push('Unbalanced braces');
     }
 
+    const emojiRegex = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+    if (emojiRegex.test(code)) {
+        errors.push('Code contains emoji characters which may cause Mermaid parse errors. Use plain text instead.');
+    }
+
+    const chinesePunctuationRegex = /[，；：。（）【】《》""''、！？]/;
+    if (chinesePunctuationRegex.test(code)) {
+        warnings.push('Code contains Chinese punctuation marks. Consider using English half-width punctuation (,;:.()[]) for better compatibility.');
+    }
+
+    if (code.includes('\t')) {
+        warnings.push('Code contains tab characters. Use spaces for indentation instead.');
+    }
+
+    const trailingSpaceLines = code.split('\n').filter((line, i) => {
+        if (i === code.split('\n').length - 1 && line === '') return false;
+        return line !== line.trimEnd() && line.trimEnd() !== '';
+    });
+    if (trailingSpaceLines.length > 0) {
+        warnings.push(`${trailingSpaceLines.length} line(s) have trailing whitespace.`);
+    }
+
     return {
         valid: errors.length === 0,
-        errors
+        errors,
+        warnings
     };
+}
+
+/**
+ * Auto-fix common Mermaid code issues
+ * Returns the fixed code and a list of fixes applied
+ */
+function autoFixMermaidCode(code) {
+    if (!code || typeof code !== 'string') return { code, fixes: [] };
+
+    const fixes = [];
+    let fixed = code;
+
+    const emojiRegex = /[\uD800-\uDBFF][\uDC00-\uDFFF]/g;
+    if (emojiRegex.test(fixed)) {
+        fixed = fixed.replace(emojiRegex, '');
+        fixes.push('Removed emoji characters');
+    }
+
+    const chinesePunctuationMap = [
+        [/\uff0c/g, ','],
+        [/\uff1b/g, ';'],
+        [/\uff1a/g, ':'],
+        [/\uff08/g, '('],
+        [/\uff09/g, ')'],
+        [/\u3010/g, '['],
+        [/\u3011/g, ']'],
+        [/\u300a/g, '<'],
+        [/\u300b/g, '>'],
+    ];
+
+    let hasChinesePunct = false;
+    for (const [regex, replacement] of chinesePunctuationMap) {
+        if (regex.test(fixed)) {
+            fixed = fixed.replace(regex, replacement);
+            hasChinesePunct = true;
+        }
+    }
+    if (hasChinesePunct) {
+        fixes.push('Replaced Chinese punctuation with English equivalents');
+    }
+
+    if (fixed.includes('\t')) {
+        fixed = fixed.replace(/\t/g, '    ');
+        fixes.push('Replaced tabs with 4 spaces');
+    }
+
+    fixed = fixed.split('\n').map(line => line.trimEnd()).join('\n');
+    if (fixed !== code && fixes.length === 0) {
+        fixes.push('Removed trailing whitespace');
+    }
+
+    return { code: fixed, fixes };
 }
 
 module.exports = {
     extractMermaidCode,
     isMermaidCode,
-    validateMermaidCode
+    validateMermaidCode,
+    autoFixMermaidCode
 };

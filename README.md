@@ -109,7 +109,7 @@ curl -X POST http://localhost:3000/api/generate \
 {
   "success": true,
   "mermaid": "flowchart TD\n    A[登录页面] --> B{验证}",
-  "history": [...]
+  "history": ["..."]
 }
 ```
 

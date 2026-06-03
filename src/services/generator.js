@@ -5,7 +5,7 @@
 
 const logger = require('../utils/logger');
 const LLMService = require('./llm');
-const { extractMermaidCode, validateMermaidCode } = require('./extractor');
+const { extractMermaidCode, validateMermaidCode, autoFixMermaidCode } = require('./extractor');
 const fs = require('fs');
 const path = require('path');
 
@@ -91,8 +91,24 @@ sequenceDiagram
                 throw new Error('Could not extract Mermaid code from LLM response');
             }
 
-            logger.info('Successfully generated Mermaid code, length:', extractedCode.length);
-            return extractedCode;
+            let finalCode = extractedCode;
+
+            const fixResult = autoFixMermaidCode(extractedCode);
+            if (fixResult.fixes.length > 0) {
+                logger.info('Auto-fixed Mermaid code:', fixResult.fixes.join(', '));
+                finalCode = fixResult.code;
+            }
+
+            const validation = validateMermaidCode(finalCode);
+            if (validation.warnings && validation.warnings.length > 0) {
+                logger.warn('Mermaid code warnings:', validation.warnings.join('; '));
+            }
+            if (!validation.valid) {
+                logger.warn('Mermaid code validation issues:', validation.errors.join('; '));
+            }
+
+            logger.info('Successfully generated Mermaid code, length:', finalCode.length);
+            return finalCode;
 
         } catch (error) {
             logger.error('Generation failed:', error.message);
@@ -113,10 +129,24 @@ sequenceDiagram
 
         try {
             const response = await this.llm.chat(messages, this.systemPrompt);
-            const extractedCode = extractMermaidCode(response);
+            let extractedCode = extractMermaidCode(response);
 
             if (!extractedCode) {
                 throw new Error('Could not extract Mermaid code from LLM response');
+            }
+
+            const fixResult = autoFixMermaidCode(extractedCode);
+            if (fixResult.fixes.length > 0) {
+                logger.info('Auto-fixed Mermaid code:', fixResult.fixes.join(', '));
+                extractedCode = fixResult.code;
+            }
+
+            const validation = validateMermaidCode(extractedCode);
+            if (validation.warnings && validation.warnings.length > 0) {
+                logger.warn('Mermaid code warnings:', validation.warnings.join('; '));
+            }
+            if (!validation.valid) {
+                logger.warn('Mermaid code validation issues:', validation.errors.join('; '));
             }
 
             return extractedCode;
