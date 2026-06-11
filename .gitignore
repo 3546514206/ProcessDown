@@ -4,3 +4,4 @@
 /.http/
 /node_modules/
 /run/
+/.claude/
