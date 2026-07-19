@@ -19,6 +19,6 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "sharp": "^0.33.5"
+    "@resvg/resvg-wasm": "^2.6.2"
   }
 }

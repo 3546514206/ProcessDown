@@ -1,11 +1,47 @@
 /**
  * Export Service
- * Handles SVG to PNG conversion on the server side
- * Uses sharp library for image processing
+ * Converts SVG to PNG using @resvg/resvg-wasm (pure WASM, cross-platform).
+ * Loads Source Han Sans SC as the default font so Chinese text renders
+ * consistently across macOS / Windows / Linux.
  */
 
-const sharp = require('sharp');
+const fs = require('fs');
+const path = require('path');
+const { Resvg, initWasm } = require('@resvg/resvg-wasm');
 const logger = require('../utils/logger');
+
+const FONT_PATH = path.join(__dirname, '../../assets/fonts/SourceHanSansSC-Regular.otf');
+const WASM_PATH = require.resolve('@resvg/resvg-wasm/index_bg.wasm');
+const FONT_FAMILY = 'Source Han Sans SC';
+
+let wasmReady = null;
+let fontBuffer = null;
+
+function ensureWasm() {
+    if (!wasmReady) {
+        wasmReady = (async () => {
+            const wasmBuffer = await fs.promises.readFile(WASM_PATH);
+            await initWasm(wasmBuffer);
+            logger.debug('resvg-wasm initialized');
+        })();
+    }
+    return wasmReady;
+}
+
+async function ensureFont() {
+    if (!fontBuffer) {
+        const raw = await fs.promises.readFile(FONT_PATH);
+        fontBuffer = new Uint8Array(raw);
+        logger.debug(`Font loaded: ${FONT_PATH}, ${fontBuffer.length} bytes`);
+    }
+    return fontBuffer;
+}
+
+function normalizeFontFamily(svgString) {
+    return svgString
+        .replace(/font-family\s*=\s*"[^"]*"/gi, `font-family="${FONT_FAMILY}"`)
+        .replace(/font-family\s*:\s*[^;"'}]+/gi, `font-family: ${FONT_FAMILY}`);
+}
 
 class ExportService {
     constructor(config) {
@@ -17,63 +53,55 @@ class ExportService {
             throw new Error('Invalid SVG string');
         }
 
-        // Extract dimensions from the root <svg> tag
+        await ensureWasm();
+        const font = await ensureFont();
+
         const dims = this.extractSvgDimensions(svgString);
-        let width = Math.round(dims.width * scale);
-        let height = Math.round(dims.height * scale);
+        const targetWidth = Math.round(dims.width * scale);
+        const targetHeight = Math.round(dims.height * scale);
 
-        width = Math.max(100, Math.min(width, 8192));
-        height = Math.max(100, Math.min(height, 8192));
+        if (targetWidth > 8192 || targetHeight > 8192) {
+            throw new Error(`Output dimensions too large: ${targetWidth}x${targetHeight}`);
+        }
 
-        // Prepare SVG: ensure correct xmlns, width, height on root tag only
-        let svgWithSize = svgString;
-        svgWithSize = svgWithSize.replace(/<svg([^>]*)>/i, (match, attrs) => {
-            if (!attrs.includes('xmlns=')) attrs += ' xmlns="http://www.w3.org/2000/svg"';
-            attrs = attrs.replace(/width\s*=\s*"[^"]*"/, ` width="${width}"`);
-            attrs = attrs.replace(/height\s*=\s*"[^"]*"/, ` height="${height}"`);
-            if (!attrs.includes('width=')) attrs += ` width="${width}"`;
-            if (!attrs.includes('height=')) attrs += ` height="${height}"`;
-            return `<svg${attrs}>`;
-        });
+        const normalizedSvg = normalizeFontFamily(svgString);
 
-        const buffer = Buffer.from(svgWithSize);
-        const density = Math.min(300, Math.round(150 * scale));
+        const options = {
+            fitTo: { mode: 'zoom', value: scale },
+            font: {
+                fontBuffers: [font],
+                defaultFontFamily: FONT_FAMILY,
+                loadSystemFonts: false,
+            },
+            dpi: Math.min(300, Math.round(150 * scale)),
+        };
 
-        logger.debug(`Exporting PNG: ${width}x${height}, density: ${density}`);
+        if (bgColor !== 'transparent') {
+            options.background = bgColor;
+        }
+
+        logger.debug(`Exporting PNG: ${targetWidth}x${targetHeight}, dpi: ${options.dpi}`);
 
         try {
-            const pngBuffer = await sharp(buffer, { density })
-                .resize(width, height, {
-                    fit: 'contain',
-                    background: bgColor === 'transparent'
-                        ? { r: 0, g: 0, b: 0, alpha: 0 }
-                        : bgColor
-                })
-                .png({ compressionLevel: 6 })
-                .toBuffer();
-
+            const resvg = new Resvg(normalizedSvg, options);
+            const rendered = resvg.render();
+            const pngBytes = rendered.asPng();
+            rendered.free();
+            const pngBuffer = Buffer.from(pngBytes);
             logger.debug('PNG generated successfully, size:', pngBuffer.length, 'bytes');
             return pngBuffer;
         } catch (err) {
-            logger.error('Sharp processing error:', err.message);
+            logger.error('Resvg processing error:', err.message);
             throw new Error(`Failed to process SVG: ${err.message}`);
         }
     }
 
-    /**
-     * Extract real dimensions from the root <svg> tag.
-     * Mermaid outputs viewBox with decimals (e.g. "0 0 1156.5 310")
-     * and width/height as "100%" on the root tag, with numeric values
-     * on inner elements. We must only read from the root <svg>.
-     */
     extractSvgDimensions(svgString) {
-        // Prefer viewBox — most reliable for Mermaid SVGs
         const vbMatch = svgString.match(/viewBox\s*=\s*"0\s+0\s+([\d.]+)\s+([\d.]+)"/);
         if (vbMatch) {
             return { width: parseFloat(vbMatch[1]), height: parseFloat(vbMatch[2]) };
         }
 
-        // Fallback: read width/height from the root <svg> tag only
         const svgTagMatch = svgString.match(/<svg[^>]*>/i);
         if (svgTagMatch) {
             const tag = svgTagMatch[0];
