@@ -15,6 +15,9 @@ const logger = require('../utils/logger');
 function extractMermaidCode(text) {
     if (!text) return null;
 
+    // 兼容 OpenAI 协议的 <think> 深度思考标签：剥离标签及其内容
+    text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
     logger.debug('Extracting Mermaid code from response, length:', text.length);
 
     // Try to find code block with mermaid language tag
