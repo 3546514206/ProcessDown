@@ -17,7 +17,7 @@ function createRouter(config) {
     const conversations = new Map();
 
     function getConversationId(req) {
-        return req.ip || 'default';
+        return req.socket.remoteAddress || 'unknown';
     }
 
     return {

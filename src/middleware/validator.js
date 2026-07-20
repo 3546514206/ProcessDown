@@ -50,9 +50,6 @@ function validatorMiddleware(req, res, next) {
         return;
     }
 
-    if (req.method === 'POST' && pathname === '/api/generate') {
-    }
-
     next();
 }
 

@@ -24,6 +24,9 @@ function ensureWasm() {
             await initWasm(wasmBuffer);
             logger.debug('resvg-wasm initialized');
         })();
+        wasmReady.catch(() => {
+            wasmReady = null;
+        });
     }
     return wasmReady;
 }
@@ -44,10 +47,6 @@ function normalizeFontFamily(svgString) {
 }
 
 class ExportService {
-    constructor(config) {
-        this.config = config;
-    }
-
     async svgToPng(svgString, scale = 1, bgColor = '#ffffff') {
         if (!svgString || typeof svgString !== 'string') {
             throw new Error('Invalid SVG string');
@@ -61,7 +60,10 @@ class ExportService {
         const targetHeight = Math.round(dims.height * scale);
 
         if (targetWidth > 8192 || targetHeight > 8192) {
-            throw new Error(`Output dimensions too large: ${targetWidth}x${targetHeight}`);
+            throw new Error(
+                `Output dimensions ${targetWidth}x${targetHeight} exceed 8192px limit ` +
+                `(original: ${dims.width}x${dims.height}, scale: ${scale}x). Try a lower scale.`
+            );
         }
 
         const normalizedSvg = normalizeFontFamily(svgString);
@@ -91,15 +93,17 @@ class ExportService {
             logger.debug('PNG generated successfully, size:', pngBuffer.length, 'bytes');
             return pngBuffer;
         } catch (err) {
-            logger.error('Resvg processing error:', err.message);
-            throw new Error(`Failed to process SVG: ${err.message}`);
+            logger.error('Resvg processing error:', err.message, err.stack);
+            const wrapped = new Error(`Failed to process SVG: ${err.message}`);
+            wrapped.cause = err;
+            throw wrapped;
         }
     }
 
     extractSvgDimensions(svgString) {
-        const vbMatch = svgString.match(/viewBox\s*=\s*"0\s+0\s+([\d.]+)\s+([\d.]+)"/);
+        const vbMatch = svgString.match(/viewBox\s*=\s*"([\d.\-eE]+)\s+([\d.\-eE]+)\s+([\d.]+)\s+([\d.]+)"/);
         if (vbMatch) {
-            return { width: parseFloat(vbMatch[1]), height: parseFloat(vbMatch[2]) };
+            return { width: parseFloat(vbMatch[3]), height: parseFloat(vbMatch[4]) };
         }
 
         const svgTagMatch = svgString.match(/<svg[^>]*>/i);

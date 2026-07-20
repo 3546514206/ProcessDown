@@ -80,7 +80,7 @@ const exportModule = {
             link.download = `flowchart-${Date.now()}-${scale}x.png`;
             link.click();
 
-            URL.revokeObjectURL(link.href);
+            setTimeout(() => URL.revokeObjectURL(link.href), 1000);
             window.app.showToast(`PNG 已导出 (${scale}x)`, 'success');
 
         } catch (error) {

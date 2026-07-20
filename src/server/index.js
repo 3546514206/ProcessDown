@@ -44,6 +44,10 @@ const MIME_TYPES = {
     '.ico': 'image/x-icon'
 };
 
+// Max request body size (1MB) - enforced in parseBody to defend against
+// clients that omit Content-Length (validator only checks the header).
+const MAX_BODY_SIZE = 1024 * 1024;
+
 function serveStaticFile(filePath, res) {
     const ext = path.extname(filePath).toLowerCase();
     const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
@@ -68,11 +72,23 @@ function serveStaticFile(filePath, res) {
 function parseBody(req) {
     return new Promise((resolve, reject) => {
         let body = '';
+        let size = 0;
+        let exceeded = false;
         req.on('data', chunk => {
+            if (exceeded) return;
+            size += chunk.length;
+            if (size > MAX_BODY_SIZE) {
+                exceeded = true;
+                const err = new Error('Request body exceeds 1MB limit');
+                err.code = 'BODY_TOO_LARGE';
+                reject(err);
+                req.destroy();
+                return;
+            }
             body += chunk;
-            // Prevent excessive body size already handled by validator
         });
         req.on('end', () => {
+            if (exceeded) return;
             try {
                 resolve(body ? JSON.parse(body) : {});
             } catch (e) {
@@ -124,8 +140,12 @@ const server = http.createServer(async (req, res) => {
                 try {
                     req.body = await parseBody(req);
                 } catch (e) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({ error: 'Invalid JSON' }));
+                    const isTooLarge = e.code === 'BODY_TOO_LARGE';
+                    res.writeHead(isTooLarge ? 413 : 400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        error: isTooLarge ? 'Payload Too Large' : 'Invalid JSON',
+                        message: e.message
+                    }));
                     return;
                 }
             }
