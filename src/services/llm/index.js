@@ -105,10 +105,11 @@ class LLMService {
             messages: fullMessages,
             temperature: this.temperature
         };
-        // max_tokens omitted when 0/unset so the model can generate up to its
-        // own context limit (needed for slow models whose <think> block would
-        // otherwise exhaust a small token budget before the diagram is output).
-        if (this.maxTokens) {
+        // max_tokens omitted when non-positive (-1 = unlimited; 0/NaN also
+        // guarded) so the model generates up to its own context limit. Needed
+        // for slow models whose <think> block would otherwise exhaust a small
+        // token budget before the diagram is output.
+        if (this.maxTokens > 0) {
             payload.max_tokens = this.maxTokens;
         }
 

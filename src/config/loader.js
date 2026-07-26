@@ -68,8 +68,8 @@ function resolveEnvVars(str) {
 
 /**
  * Parse an environment variable as integer. Returns fallback when the var is
- * unset or non-numeric (parseInt -> NaN). 0 is preserved as a valid value
- * (e.g. LLM_MAX_TOKENS=0 means "no limit"), so ?? cannot be used here since
+ * unset or non-numeric (parseInt -> NaN). Negative values are preserved
+ * (e.g. LLM_MAX_TOKENS=-1 means "no limit"), so ?? cannot be used here since
  * it only guards null/undefined, not NaN.
  */
 function envInt(name, fallback) {
