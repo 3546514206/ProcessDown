@@ -138,6 +138,46 @@ function validateMermaidCode(code) {
  * Auto-fix common Mermaid code issues
  * Returns the fixed code and a list of fixes applied
  */
+
+/**
+ * Fix sequenceDiagram `opt` blocks that incorrectly contain `else`.
+ * Mermaid's `opt` block does not support `else` (only `alt` does). When an
+ * `opt` block contains `else`, the model intended a conditional branch, so
+ * convert `opt` to `alt`. Tracks block nesting via a stack so nested blocks
+ * are matched correctly.
+ */
+function fixOptWithElse(code) {
+    const lines = code.split('\n');
+    const stack = [];
+    const optLinesToFix = new Set();
+
+    for (let i = 0; i < lines.length; i++) {
+        const trimmed = lines[i].trim();
+        const blockMatch = trimmed.match(/^(opt|alt|par|loop|critical|rect|box)\b/i);
+        if (blockMatch) {
+            stack.push({ type: blockMatch[1].toLowerCase(), line: i });
+            continue;
+        }
+        if (/^else\b/i.test(trimmed)) {
+            if (stack.length > 0 && stack[stack.length - 1].type === 'opt') {
+                optLinesToFix.add(stack[stack.length - 1].line);
+            }
+            continue;
+        }
+        if (/^end\b/i.test(trimmed)) {
+            if (stack.length > 0) stack.pop();
+        }
+    }
+
+    if (optLinesToFix.size === 0) {
+        return { fixed: false, code };
+    }
+    for (const lineNum of optLinesToFix) {
+        lines[lineNum] = lines[lineNum].replace(/\bopt\b/i, 'alt');
+    }
+    return { fixed: true, code: lines.join('\n') };
+}
+
 function autoFixMermaidCode(code) {
     if (!code || typeof code !== 'string') return { code, fixes: [] };
 
@@ -176,6 +216,12 @@ function autoFixMermaidCode(code) {
     if (fixed.includes('\t')) {
         fixed = fixed.replace(/\t/g, '    ');
         fixes.push('Replaced tabs with 4 spaces');
+    }
+
+    const optFix = fixOptWithElse(fixed);
+    if (optFix.fixed) {
+        fixed = optFix.code;
+        fixes.push('Converted opt block with else to alt');
     }
 
     fixed = fixed.split('\n').map(line => line.trimEnd()).join('\n');
