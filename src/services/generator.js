@@ -155,6 +155,13 @@ sequenceDiagram
             throw error;
         }
     }
+
+    /**
+     * Probe LLM reachability for health checks.
+     */
+    async checkLlm() {
+        return this.llm.ping();
+    }
 }
 
 module.exports = GeneratorService;

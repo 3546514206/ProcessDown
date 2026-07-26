@@ -119,14 +119,20 @@ function createRouter(config) {
 
         /**
          * GET /api/health
-         * Health check endpoint
+         * Health check endpoint. LLM reachability probe is opt-in
+         * (HEALTH_CHECK_LLM=true) because probing a slow air-gapped LLM
+         * on every check is impractical.
          */
-        health(req, res) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
+        async health(req, res) {
+            const body = {
                 status: 'ok',
                 timestamp: new Date().toISOString()
-            }));
+            };
+            if (config.health.checkLlm) {
+                body.llm = await generator.checkLlm();
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(body));
         },
 
         /**
@@ -199,7 +205,7 @@ function createRouter(config) {
                     return;
                 }
 
-                const scale = Math.min(Math.max(parseInt(body.scale) || 1, 1), 4);
+                const scale = Math.min(Math.max(parseInt(body.scale) || 1, 1), 3);
                 const bgType = body.bg || 'dark';
                 const bgColor = exportService.parseBackgroundColor(bgType);
 

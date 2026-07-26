@@ -5,6 +5,7 @@
 
 const https = require('https');
 const http = require('http');
+const net = require('net');
 const logger = require('../../utils/logger');
 
 class LLMService {
@@ -115,6 +116,41 @@ class LLMService {
             logger.error('LLM chat error:', error.message);
             throw error;
         }
+    }
+
+    /**
+     * TCP-only reachability probe for health checks. Verifies the LLM
+     * endpoint is accepting connections without sending a chat request,
+     * so it stays fast (sub-second) even when the model itself is slow --
+     * air-gapped local LLMs can take tens of seconds per completion.
+     * Does not throw; returns a status object instead.
+     */
+    async ping(timeoutMs = 2000) {
+        const baseUrlObj = new URL(this.baseUrl);
+        const port = parseInt(baseUrlObj.port) || (baseUrlObj.protocol === 'https:' ? 443 : 80);
+        const host = baseUrlObj.hostname;
+        return new Promise(resolve => {
+            const socket = new net.Socket();
+            let settled = false;
+            let timer;
+            const finish = (result) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                socket.destroy();
+                resolve(result);
+            };
+            timer = setTimeout(() => {
+                finish({ reachable: false, model: this.model, error: 'TCP connect timeout' });
+            }, timeoutMs);
+            socket.once('connect', () => {
+                finish({ reachable: true, model: this.model });
+            });
+            socket.once('error', (err) => {
+                finish({ reachable: false, model: this.model, error: err.message });
+            });
+            socket.connect(port, host);
+        });
     }
 }
 

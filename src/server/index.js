@@ -71,7 +71,7 @@ function serveStaticFile(filePath, res) {
 
 function parseBody(req) {
     return new Promise((resolve, reject) => {
-        let body = '';
+        const chunks = [];
         let size = 0;
         let exceeded = false;
         req.on('data', chunk => {
@@ -85,11 +85,14 @@ function parseBody(req) {
                 req.destroy();
                 return;
             }
-            body += chunk;
+            chunks.push(chunk);
         });
         req.on('end', () => {
             if (exceeded) return;
             try {
+                // Concat as Buffer first so multi-byte UTF-8 (Chinese) split
+                // across chunk boundaries is reassembled correctly.
+                const body = Buffer.concat(chunks).toString('utf8');
                 resolve(body ? JSON.parse(body) : {});
             } catch (e) {
                 reject(new Error('Invalid JSON'));

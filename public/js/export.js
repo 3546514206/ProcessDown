@@ -99,7 +99,6 @@ const exportModule = {
             <div class="export-menu-item" data-scale="1">1x (标准)</div>
             <div class="export-menu-item" data-scale="2">2x (高清)</div>
             <div class="export-menu-item" data-scale="3">3x (超清)</div>
-            <div class="export-menu-item" data-scale="4">4x (4K)</div>
         `;
 
         const btn = document.getElementById('btn-export-png');

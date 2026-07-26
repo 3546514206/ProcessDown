@@ -117,6 +117,7 @@ function loadConfig() {
     // Build final config object
     const config = {
         server: {
+            host: process.env.SERVER_HOST || fileConfig.server?.host || '0.0.0.0',
             port: parseInt(process.env.SERVER_PORT) || fileConfig.server?.port || 3000,
             timeout: parseInt(process.env.REQUEST_TIMEOUT) || fileConfig.server?.timeout || 120
         },
@@ -128,7 +129,7 @@ function loadConfig() {
             originsSeparator: ','
         },
         rateLimit: {
-            enabled: fileConfig.rateLimit?.enabled || true,
+            enabled: fileConfig.rateLimit?.enabled ?? true,
             maxRequests: fileConfig.rateLimit?.maxRequests || 100,
             windowMs: fileConfig.rateLimit?.windowMs || 60000
         },
@@ -147,6 +148,12 @@ function loadConfig() {
         auth: {
             enabled: !!process.env.API_AUTH_KEY,
             apiKey: process.env.API_AUTH_KEY || null
+        },
+        health: {
+            // LLM reachability probe in /api/health. Disabled by default:
+            // in air-gapped setups the LLM may be slow, and probing it on
+            // every health check is impractical. Enable explicitly when needed.
+            checkLlm: process.env.HEALTH_CHECK_LLM === 'true'
         }
     };
 
