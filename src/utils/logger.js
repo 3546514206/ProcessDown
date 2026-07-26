@@ -1,7 +1,17 @@
 /**
  * Logger Utility
- * Simple leveled logging with sensitive data masking
+ * Simple leveled logging with sensitive data masking.
+ *
+ * Logs are always written synchronously to run/processdown.log so output is
+ * never lost to stdout block-buffering when piped/redirected (Node switches
+ * console to 4KB block buffering on non-TTY stdout, which delays or drops the
+ * small amount of startup logs). They are also mirrored to the console only
+ * when stdout is a TTY (foreground use), avoiding double-writing when start.sh
+ * redirects stdout to the same file.
  */
+
+const fs = require('fs');
+const path = require('path');
 
 const LOG_LEVELS = {
     debug: 0,
@@ -13,6 +23,22 @@ const LOG_LEVELS = {
 class Logger {
     constructor() {
         this.level = LOG_LEVELS.info;
+        this.logFile = this.initLogFile();
+    }
+
+    /**
+     * Set up synchronous file logging under run/. Returns null (console-only
+     * fallback) if the directory cannot be created, so logging never breaks
+     * the application.
+     */
+    initLogFile() {
+        try {
+            const logDir = path.join(process.cwd(), 'run');
+            fs.mkdirSync(logDir, { recursive: true });
+            return path.join(logDir, 'processdown.log');
+        } catch (e) {
+            return null;
+        }
     }
 
     setLevel(level) {
@@ -62,27 +88,47 @@ class Logger {
             : `${prefix} ${message}`;
     }
 
+    /**
+     * Emit a formatted log line. Writes synchronously to the log file (never
+     * lost to stdout block-buffering) and to the console only when stdout is
+     * a TTY (avoids double-writing when start.sh redirects stdout to the
+     * same run/processdown.log).
+     */
+    output(level, formatted) {
+        if (process.stdout.isTTY) {
+            const method = level === 'error' ? 'error' : (level === 'warn' ? 'warn' : 'log');
+            console[method](formatted);
+        }
+        if (this.logFile) {
+            try {
+                fs.appendFileSync(this.logFile, formatted + '\n');
+            } catch (e) {
+                // ignore file write errors; logging must never break the app
+            }
+        }
+    }
+
     debug(message, ...args) {
         if (this.level <= LOG_LEVELS.debug) {
-            console.log(this.formatMessage('debug', message, ...args));
+            this.output('debug', this.formatMessage('debug', message, ...args));
         }
     }
 
     info(message, ...args) {
         if (this.level <= LOG_LEVELS.info) {
-            console.log(this.formatMessage('info', message, ...args));
+            this.output('info', this.formatMessage('info', message, ...args));
         }
     }
 
     warn(message, ...args) {
         if (this.level <= LOG_LEVELS.warn) {
-            console.warn(this.formatMessage('warn', message, ...args));
+            this.output('warn', this.formatMessage('warn', message, ...args));
         }
     }
 
     error(message, ...args) {
         if (this.level <= LOG_LEVELS.error) {
-            console.error(this.formatMessage('error', message, ...args));
+            this.output('error', this.formatMessage('error', message, ...args));
         }
     }
 }

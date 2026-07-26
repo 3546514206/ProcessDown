@@ -103,9 +103,14 @@ class LLMService {
         const payload = {
             model: this.model,
             messages: fullMessages,
-            temperature: this.temperature,
-            max_tokens: this.maxTokens
+            temperature: this.temperature
         };
+        // max_tokens omitted when 0/unset so the model can generate up to its
+        // own context limit (needed for slow models whose <think> block would
+        // otherwise exhaust a small token budget before the diagram is output).
+        if (this.maxTokens) {
+            payload.max_tokens = this.maxTokens;
+        }
 
         logger.info('Sending request to LLM, model:', this.model);
 

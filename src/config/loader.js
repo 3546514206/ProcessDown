@@ -67,6 +67,17 @@ function resolveEnvVars(str) {
 }
 
 /**
+ * Parse an environment variable as integer. Returns fallback when the var is
+ * unset or non-numeric (parseInt -> NaN). 0 is preserved as a valid value
+ * (e.g. LLM_MAX_TOKENS=0 means "no limit"), so ?? cannot be used here since
+ * it only guards null/undefined, not NaN.
+ */
+function envInt(name, fallback) {
+    const v = parseInt(process.env[name]);
+    return Number.isNaN(v) ? fallback : v;
+}
+
+/**
  * Validate required environment variables
  */
 function validateConfig() {
@@ -138,8 +149,8 @@ function loadConfig() {
             apiKey: process.env.LLM_API_KEY,
             model: process.env.LLM_MODEL,
             temperature: fileConfig.llm?.temperature || 0.3,
-            maxTokens: fileConfig.llm?.maxTokens || 2000,
-            timeout: fileConfig.llm?.timeout || 120
+            maxTokens: envInt('LLM_MAX_TOKENS', fileConfig.llm?.maxTokens ?? 2000),
+            timeout: envInt('LLM_TIMEOUT', fileConfig.llm?.timeout ?? 120)
         },
         logging: {
             level: process.env.LOG_LEVEL || fileConfig.logging?.level || 'info',

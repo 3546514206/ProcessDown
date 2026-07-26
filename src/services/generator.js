@@ -87,7 +87,7 @@ sequenceDiagram
             const extractedCode = extractMermaidCode(response);
 
             if (!extractedCode) {
-                logger.warn('LLM response did not contain Mermaid code. Raw response:', response.substring(0, 500));
+                logger.warn('LLM response did not contain Mermaid code. Raw response (length: ' + response.length + '):', response);
                 throw new Error('Could not extract Mermaid code from LLM response');
             }
 
