@@ -25,6 +25,9 @@ node tests/export.test.js
 ### Mermaid 生成管道（`src/services/`）
 `GeneratorService` 编排：`LLMService.chat`（OpenAI 兼容的 `/chat/completions`）-> `extractMermaidCode` -> `autoFixMermaidCode` -> `validateMermaidCode`。`src/services/extractor.js` 里的修复链是核心特性：剥离 `<think>` 推理标签、移除 emoji、把中文全角标点转成 ASCII、Tab 展开为 4 空格、并把错误包含 `else` 的 `opt` 块改写成 `alt`（通过基于栈的嵌套跟踪器匹配）。`LLMService` 用原生 `https`/`http`，按协议自动选择；`max_tokens` 在非正时（`-1` = 无限制）从 payload 中省略，这样开启 `<think>` 深度思考的慢模型不会在输出图表前就把 token 配额耗尽。
 
+### 会话（`src/services/sessionStore.js`）
+历史按会话落盘到 `run/session/<uuid>/history.json`（`[{role, content, ts}]`）。前端首次生成前懒调用 `POST /api/session` 拿 uuid，只存内存——浏览器刷新即丢，下次重新申请。`generate` 把最近 N 条 history 拼在 messages 前部实现多轮（当前指令永远在最后；不与 currentMermaid 去重，因为用户可能手改了编辑器代码）。服务启动时清理 `history.json` mtime 超过 `SESSION_TTL_DAYS`（默认 7 天）的会话文件夹；注意必须 stat 文件而非文件夹——写文件不刷新文件夹自身的 mtime。sessionId 用通用 uuid 形正则校验（只放行 hex+连字符），天然免疫路径穿越。
+
 ### PNG 导出（`src/services/export.js`）
 服务端 SVG->PNG，基于 `@resvg/resvg-wasm`（纯 WASM，无原生依赖——`node_modules` 可在 macOS/Windows/Linux 之间直接拷贝）。WASM 初始化和内嵌的思源黑体（`assets/fonts/SourceHanSansSC-Regular.otf`）是模块级单例 promise（懒加载，失败可重试）。SVG 中所有 `font-family` 声明都被统一归一化为思源黑体，保证中文在各平台一致渲染。这正是 `prompts/system.txt` 禁止节点文本使用 HTML 标签的原因：resvg 不渲染 HTML 标签，导出 PNG 时这些内容会消失。前端 Mermaid 以 `securityLevel: 'loose'` 运行以获得渲染灵活性，而提示词把输出约束为纯文本——两者相容，并不矛盾。
 
@@ -46,14 +49,12 @@ node tests/export.test.js
 
 ### 严重
 
-- **会话串扰 + 内存泄漏**（`src/routes/api.js`）：会话历史以 `req.socket.remoteAddress` 为 key 存在内存 `Map` 中，无清理机制。反向代理后所有客户端坍缩为同一个 IP、共享同一份历史，互相污染；`Map` 只增不减，长期运行内存泄漏。应改用前端传入的 sessionId 或 cookie，并加 TTL 清理。
 - **`/api/regenerate` 死端点**：后端实现了完整路由（`src/routes/api.js`），但前端三个 JS 文件均未调用。要么接上前端，要么删除后端。
-- **`history` 全链路死逻辑**：后端存历史、返回历史，前端存 `state.history`，但**从不用于 LLM 上下文，也不展示**。整条链路是无效代码。要么真正把 history 喂给 LLM 实现多轮，要么砍掉。
 
 ### 中等
 
 - **`bin/start.sh` 的 export 列表不完整**（`bin/start.sh:161`）：只导出部分变量，漏了 `LLM_MAX_TOKENS / LLM_TIMEOUT / SERVER_HOST / REQUEST_TIMEOUT / HEALTH_CHECK_LLM / NODE_ENV`。所幸 `loader.js` 的 `loadEnvFile` 兜底读取 `.env`，否则这些配置在脚本启动时失效。属“能跑但脆弱”。
-- **限流 IP 获取不处理 `X-Forwarded-For`**（`src/middleware/rateLimit.js:28`）：`req.ip` 在原生 http 上恒为 undefined，总走 `req.connection.remoteAddress`；反代后所有限流打到同一 IP，限流形同虚设。与上述会话串扰同源。
+- **限流 IP 获取不处理 `X-Forwarded-For`**（`src/middleware/rateLimit.js:28`）：`req.ip` 在原生 http 上恒为 undefined，总走 `req.connection.remoteAddress`；反代后限流键坍缩为同一 IP，限流形同虚设。
 - **日志记录用户 prompt 原文**（`src/services/generator.js:69`）：`logger.info('...prompt:', prompt.substring(0,100))` 把用户输入落盘到 `run/processdown.log`，`maskSensitive` 不处理普通文本，可能泄露业务敏感信息。
 
 ### 轻微

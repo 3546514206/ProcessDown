@@ -63,12 +63,19 @@ sequenceDiagram
     }
 
     /**
-     * Generate Mermaid code from natural language
+     * Generate Mermaid code from natural language.
+     * history: prior rounds [{role, content}] from the session store, oldest
+     * first. The current instruction goes last so the model treats it as the
+     * authoritative request. We deliberately do NOT dedupe history's last
+     * assistant message against currentMermaid: the user may have hand-edited
+     * the diagram in the editor, in which case the "Current diagram:" block in
+     * this turn's user message is the precise present state while history only
+     * provides conversational context.
      */
-    async generate(prompt, currentMermaid = null) {
+    async generate(prompt, currentMermaid = null, history = []) {
         logger.info('Generating Mermaid code for prompt:', prompt.substring(0, 100));
 
-        const messages = [];
+        const messages = [...history];
 
         if (currentMermaid) {
             messages.push({

@@ -20,7 +20,9 @@ const OPTIONAL_ENV_VARS = [
     'ALLOWED_ORIGINS',
     'LOG_LEVEL',
     'NODE_ENV',
-    'REQUEST_TIMEOUT'
+    'REQUEST_TIMEOUT',
+    'SESSION_MAX_HISTORY',
+    'SESSION_TTL_DAYS'
 ];
 
 /**
@@ -143,6 +145,13 @@ function loadConfig() {
             enabled: fileConfig.rateLimit?.enabled ?? true,
             maxRequests: fileConfig.rateLimit?.maxRequests || 100,
             windowMs: fileConfig.rateLimit?.windowMs || 60000
+        },
+        session: {
+            // dir 只走 config.json：部署上基本没有改它的需求，少开一个环境变量
+            dir: fileConfig.session?.dir || path.join(process.cwd(), 'run', 'session'),
+            // maxHistory 计消息条数而非轮数：20 条 = 10 轮（每轮 user + assistant 各一条）
+            maxHistory: envInt('SESSION_MAX_HISTORY', fileConfig.session?.maxHistory ?? 20),
+            ttlDays: envInt('SESSION_TTL_DAYS', fileConfig.session?.ttlDays ?? 7)
         },
         llm: {
             baseUrl: process.env.LLM_API_BASE_URL,

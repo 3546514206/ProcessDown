@@ -14,6 +14,7 @@ const rateLimitMiddleware = require('../middleware/rateLimit');
 const { validatorMiddleware } = require('../middleware/validator');
 const errorHandler = require('../middleware/errorHandler');
 const createApiRouter = require('../routes/api');
+const { cleanupExpiredSessions } = require('../services/sessionStore');
 
 // Load configuration
 const config = getConfig();
@@ -171,6 +172,10 @@ const server = http.createServer(async (req, res) => {
                     api.health(req, res);
                     break;
 
+                case '/api/session':
+                    await api.createSession(req, res);
+                    break;
+
                 case '/api/export/png':
                     await api.exportPng(req, res);
                     break;
@@ -213,6 +218,7 @@ const PORT = config.server.port;
 const HOST = config.server.host || '0.0.0.0';
 
 server.listen(PORT, HOST, () => {
+    cleanupExpiredSessions(config);
     logger.info(`🚀 ProcessDown server running on http://${HOST}:${PORT}`);
     logger.info(`   Environment: ${process.env.NODE_ENV || 'development'}`);
     logger.info(`   Auth enabled: ${config.auth.enabled}`);

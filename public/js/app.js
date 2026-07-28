@@ -9,7 +9,10 @@ const state = {
     history: [],
     theme: localStorage.getItem('theme') || 'dark',
     zoom: 1,
-    isGenerating: false
+    isGenerating: false,
+    // In-memory only, never localStorage: a browser refresh loses it on
+    // purpose, and the next generation starts a brand-new session
+    sessionId: null
 };
 
 // DOM Elements
@@ -60,6 +63,27 @@ function updateCodeStatus(text, type = 'ready') {
     elements.codeStatus.textContent = text;
 }
 
+// Lazily create a session before the first generation. state.isGenerating
+// already blocks concurrent clicks, so this cannot race.
+async function ensureSession() {
+    if (state.sessionId) return;
+
+    const response = await fetch('/api/session', {
+        method: 'POST',
+        // Required even with an empty body: the server rejects non-JSON
+        // POSTs under /api/ with 415
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+        throw new Error(data.message || '会话创建失败');
+    }
+    state.sessionId = data.sessionId;
+}
+
 // Generate flowchart
 async function generateFlowchart() {
     const prompt = elements.inputPrompt.value.trim();
@@ -80,6 +104,8 @@ async function generateFlowchart() {
     let responseData = null;
 
     try {
+        await ensureSession();
+
         const response = await fetch('/api/generate', {
             method: 'POST',
             headers: {
@@ -87,7 +113,8 @@ async function generateFlowchart() {
             },
             body: JSON.stringify({
                 prompt: prompt,
-                mermaid: state.mermaidCode || undefined
+                mermaid: state.mermaidCode || undefined,
+                sessionId: state.sessionId
             })
         });
 
