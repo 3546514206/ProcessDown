@@ -29,6 +29,21 @@ class SessionStore {
         return path.join(this.dir, sessionId, 'history.json');
     }
 
+    /**
+     * Pure existence probe: returns true only when history.json already exists
+     * on disk. Does NOT create, throw, or read content - this is the safe way
+     * to check whether a session is restorable. readHistory cannot be used for
+     * that: it transparently recreates a missing folder+file as a side effect,
+     * which would pollute run/session/ with empty stubs for every probed id.
+     * "Exists but empty history" (just created, no generate yet) is true: the
+     * folder+file are there, only no rounds have been appended. Checking the
+     * file path alone is enough - a file cannot exist without its parent dir.
+     */
+    exists(sessionId) {
+        if (!this.isValidId(sessionId)) return false;
+        return fs.existsSync(this.historyPath(sessionId));
+    }
+
     create() {
         const sessionId = crypto.randomUUID();
         fs.mkdirSync(path.join(this.dir, sessionId), { recursive: true });

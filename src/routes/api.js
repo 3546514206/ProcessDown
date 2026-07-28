@@ -50,6 +50,75 @@ function createRouter(config) {
         },
 
         /**
+         * POST /api/session/check
+         * Probe whether a session exists so the frontend can offer to restore
+         * it. Read-only for unknown ids: exists() touches the filesystem only
+         * via stat, and history is read solely when exists is true (so an
+         * unknown id never triggers readHistory's transparent recreation).
+         * Caveat: when the session exists but history.json is corrupt,
+         * readHistory's recovery path backs up and resets the file - a write
+         * side effect during this nominally read-only probe. Accepted because
+         * the corrupt file cannot serve history anyway, and the backup
+         * preserves the original bytes for forensics.
+         * lastMermaid (last assistant content) is returned for the frontend
+         * to re-render the previous diagram on restore.
+         */
+        checkSession(req, res) {
+            if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Method Not Allowed',
+                    message: 'Use POST to check a session'
+                }));
+                return;
+            }
+
+            const body = req.body || {};
+            const { sessionId: rawId } = body;
+
+            if (typeof rawId !== 'string' || !rawId.trim()) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Validation Error',
+                    message: '"sessionId" field is required'
+                }));
+                return;
+            }
+
+            // Trim once so the shape check, exists probe, and response echo
+            // all see the same value - matches the frontend, which trims
+            // before sending.
+            const sessionId = rawId.trim();
+
+            // Shape check before any filesystem touch - never let an untrusted
+            // id near the disk even though exists() also guards internally.
+            if (!sessionStore.isValidId(sessionId)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Validation Error',
+                    message: 'Invalid sessionId format'
+                }));
+                return;
+            }
+
+            const exists = sessionStore.exists(sessionId);
+
+            let lastMermaid = null;
+            if (exists) {
+                const history = sessionStore.readHistory(sessionId);
+                for (let i = history.length - 1; i >= 0; i--) {
+                    if (history[i].role === 'assistant') {
+                        lastMermaid = history[i].content;
+                        break;
+                    }
+                }
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, exists, sessionId, lastMermaid }));
+        },
+
+        /**
          * POST /api/generate
          * Generate Mermaid diagram from natural language
          */

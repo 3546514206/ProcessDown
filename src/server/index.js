@@ -176,6 +176,10 @@ const server = http.createServer(async (req, res) => {
                     await api.createSession(req, res);
                     break;
 
+                case '/api/session/check':
+                    await api.checkSession(req, res);
+                    break;
+
                 case '/api/export/png':
                     await api.exportPng(req, res);
                     break;

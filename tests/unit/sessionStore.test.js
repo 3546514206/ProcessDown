@@ -201,6 +201,49 @@ describe('SessionStore', () => {
         });
     });
 
+    describe('exists()', () => {
+        it('should return false for a non-existent session', () => {
+            assert.strictEqual(store.exists('550e8400-e29b-41d4-a716-446655440000'), false);
+        });
+
+        it('should NOT create any folder or file as a side effect', () => {
+            const id = '550e8400-e29b-41d4-a716-446655440000';
+            store.exists(id);
+            assert.strictEqual(fs.existsSync(path.join(tempDir, id)), false);
+        });
+
+        it('should return true for a just-created session with empty history', () => {
+            const sessionId = store.create();
+            assert.strictEqual(store.exists(sessionId), true);
+        });
+
+        it('should return true for a session that has history', () => {
+            const sessionId = store.create();
+            store.append(sessionId, 'u', 'a');
+            assert.strictEqual(store.exists(sessionId), true);
+        });
+
+        it('should return false when the folder exists but history.json is missing', () => {
+            const id = '550e8400-e29b-41d4-a716-446655440000';
+            fs.mkdirSync(path.join(tempDir, id));
+            assert.strictEqual(store.exists(id), false);
+        });
+
+        it('should return false for an invalid id (path traversal)', () => {
+            assert.strictEqual(store.exists('../../etc/passwd'), false);
+        });
+
+        it('should return false for an invalid id (non-string)', () => {
+            assert.strictEqual(store.exists(null), false);
+            assert.strictEqual(store.exists(123), false);
+            assert.strictEqual(store.exists(undefined), false);
+        });
+
+        it('should return false for an almost-UUID with wrong length', () => {
+            assert.strictEqual(store.exists('550e8400-e29b-41d4-a716-44665544000'), false);
+        });
+    });
+
     describe('append()', () => {
         it('should append one round (user + assistant) with ts', () => {
             const sessionId = store.create();

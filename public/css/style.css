@@ -208,6 +208,85 @@ body {
 }
 
 /* ========================================
+   Session Section
+   ======================================== */
+
+.session-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 10px 16px 12px;
+    background: var(--bg-secondary);
+    border-bottom: 2px solid var(--border-strong);
+    flex-shrink: 0;
+}
+
+.session-current {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.session-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    flex-shrink: 0;
+}
+
+.session-id-display {
+    flex: 1;
+    min-width: 0;
+    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Monaco', 'Menlo', monospace;
+    font-size: 11px;
+    color: var(--text-primary);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.session-restore {
+    display: flex;
+    gap: 6px;
+}
+
+.session-restore-input {
+    flex: 1;
+    min-width: 0;
+    padding: 5px 8px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Monaco', 'Menlo', monospace;
+    font-size: 11px;
+}
+
+.session-restore-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.session-restore-input::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.session-hint {
+    font-size: 11px;
+    color: var(--text-secondary);
+    opacity: 0.75;
+    line-height: 1.4;
+}
+
+/* ========================================
    Code Section
    ======================================== */
 
@@ -452,6 +531,11 @@ body {
 
 .btn-small:hover svg {
     fill: var(--text-primary);
+}
+
+.btn-small:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 .icon-btn {

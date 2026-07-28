@@ -111,6 +111,93 @@ describe('API Routes', () => {
         });
     });
 
+    describe('checkSession', () => {
+        it('should return 405 for GET requests', () => {
+            const req = createMockReq('GET');
+            const res = createMockRes();
+
+            router.checkSession(req, res);
+
+            assert.strictEqual(res.statusCode, 405);
+            const body = JSON.parse(res.body);
+            assert.strictEqual(body.error, 'Method Not Allowed');
+        });
+
+        it('should return 400 when sessionId is missing', () => {
+            const req = createMockReq('POST', {});
+            const res = createMockRes();
+
+            router.checkSession(req, res);
+
+            assert.strictEqual(res.statusCode, 400);
+            const body = JSON.parse(res.body);
+            assert.strictEqual(body.error, 'Validation Error');
+        });
+
+        it('should return 400 for invalid sessionId format', () => {
+            const req = createMockReq('POST', { sessionId: '../../etc/passwd' });
+            const res = createMockRes();
+
+            router.checkSession(req, res);
+
+            assert.strictEqual(res.statusCode, 400);
+            const body = JSON.parse(res.body);
+            assert.strictEqual(body.message, 'Invalid sessionId format');
+        });
+
+        it('should return exists=false and no lastMermaid for unknown session', () => {
+            const req = createMockReq('POST', { sessionId: '550e8400-e29b-41d4-a716-446655440000' });
+            const res = createMockRes();
+
+            router.checkSession(req, res);
+
+            assert.strictEqual(res.statusCode, 200);
+            const body = JSON.parse(res.body);
+            assert.strictEqual(body.exists, false);
+            assert.strictEqual(body.lastMermaid, null);
+            // Must not create the folder as a side effect
+            assert.strictEqual(
+                fs.existsSync(path.join(tempDir, '550e8400-e29b-41d4-a716-446655440000')),
+                false
+            );
+        });
+
+        it('should return exists=true and lastMermaid=null for a just-created (empty) session', () => {
+            // Create a session via the route (id comes back in the response body)
+            const createRes = createMockRes();
+            router.createSession(createMockReq('POST'), createRes);
+            const created = JSON.parse(createRes.body).sessionId;
+
+            const req = createMockReq('POST', { sessionId: created });
+            const res = createMockRes();
+
+            router.checkSession(req, res);
+
+            assert.strictEqual(res.statusCode, 200);
+            const body = JSON.parse(res.body);
+            assert.strictEqual(body.exists, true);
+            assert.strictEqual(body.lastMermaid, null);
+        });
+
+        it('should return exists=true and the last assistant content for a session with history', async () => {
+            // Seed a session with one round via generate
+            const id = '550e8400-e29b-41d4-a716-446655440000';
+            const seedReq = createMockReq('POST', { prompt: 'draw', sessionId: id });
+            const seedRes = createMockRes();
+            await router.generate(seedReq, seedRes);
+
+            const req = createMockReq('POST', { sessionId: id });
+            const res = createMockRes();
+
+            router.checkSession(req, res);
+
+            assert.strictEqual(res.statusCode, 200);
+            const body = JSON.parse(res.body);
+            assert.strictEqual(body.exists, true);
+            assert.strictEqual(body.lastMermaid, 'flowchart TD\n A-->B');
+        });
+    });
+
     describe('generate', () => {
         it('should return 200 with empty history when no sessionId provided', async () => {
             const req = createMockReq('POST', { prompt: 'test prompt' });
