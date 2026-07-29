@@ -142,7 +142,13 @@ do_start() {
     echo "  - 服务器端口: $port"
     echo "  - LLM 模型: $LLM_MODEL"
     echo "  - API 地址: ${LLM_API_BASE_URL%%/v1*}***"
-    echo "  - 认证: ${API_AUTH_KEY:+启用} ${API_AUTH_KEY:-未启用}"
+    # 不能用 ${API_AUTH_KEY:-未启用}：该写法在 key 有值时展开为值本身，会泄露明文。
+    # 显式判断 -n，只输出启用/未启用，绝不回显 key。
+    if [ -n "$API_AUTH_KEY" ]; then
+        echo "  - 认证: 启用"
+    else
+        echo "  - 认证: 未启用"
+    fi
     echo "  - 日志级别: ${LOG_LEVEL:-info}"
     echo ""
 
