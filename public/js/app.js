@@ -30,9 +30,8 @@ const elements = {
     codeStatus: document.getElementById('code-status'),
     toastContainer: document.getElementById('toast-container'),
     apiConfig: document.getElementById('api-config'),
-    sessionIdDisplay: document.getElementById('session-id-display'),
     btnCopySession: document.getElementById('btn-copy-session'),
-    sessionRestoreInput: document.getElementById('session-restore-input'),
+    sessionInput: document.getElementById('session-input'),
     btnRestoreSession: document.getElementById('btn-restore-session')
 };
 
@@ -93,16 +92,15 @@ async function ensureSession() {
     updateSessionDisplay();
 }
 
-// Reflect state.sessionId in the UI. Null (before the first generation)
-// shows a placeholder and disables the copy button.
+// Reflect state.sessionId in the UI. The single input doubles as the display:
+// a real id is written back into it so the user can copy/eyeball it; null
+// clears it so the placeholder ("paste an id to restore") shows through.
 function updateSessionDisplay() {
     if (state.sessionId) {
-        elements.sessionIdDisplay.textContent = state.sessionId;
-        elements.sessionIdDisplay.title = state.sessionId;
+        elements.sessionInput.value = state.sessionId;
         elements.btnCopySession.disabled = false;
     } else {
-        elements.sessionIdDisplay.textContent = '尚未创建会话';
-        elements.sessionIdDisplay.title = '当前会话 ID';
+        elements.sessionInput.value = '';
         elements.btnCopySession.disabled = true;
     }
 }
@@ -132,7 +130,7 @@ async function restoreSession() {
         showToast('生成中，请稍候', 'warning');
         return;
     }
-    const input = elements.sessionRestoreInput.value.trim();
+    const input = elements.sessionInput.value.trim();
     if (!input) {
         showToast('请输入会话 ID', 'warning');
         return;
@@ -186,6 +184,7 @@ async function generateFlowchart() {
     state.isGenerating = true;
     elements.btnGenerate.disabled = true;
     elements.btnRestoreSession.disabled = true;
+    elements.btnCopySession.disabled = true;
     elements.btnGenerate.querySelector('.btn-text').style.display = 'none';
     elements.btnGenerate.querySelector('.btn-loading').style.display = 'inline';
 
@@ -241,6 +240,14 @@ async function generateFlowchart() {
         state.isGenerating = false;
         elements.btnGenerate.disabled = false;
         elements.btnRestoreSession.disabled = false;
+        // Re-sync the session box after generation. Covers two paths: (1) the
+        // user typed a pending id into the input without restoring -
+        // ensureSession returned early on the existing sessionId, leaving the
+        // box showing that pending id, so write the real sessionId back; (2)
+        // generation failed before a session was created - sessionId is null
+        // and this clears the box and disables copy. This also re-derives the
+        // copy button's disabled state, subsuming the old manual line.
+        updateSessionDisplay();
         elements.btnGenerate.querySelector('.btn-text').style.display = 'inline';
         elements.btnGenerate.querySelector('.btn-loading').style.display = 'none';
     }
@@ -355,12 +362,14 @@ function initEventListeners() {
             }
         }
     });
-    // Enter (without Ctrl) in the restore input triggers restore. Ctrl+Enter
-    // is intentionally NOT handled here so it bubbles to the document handler
-    // and stays the generate shortcut - handling it in both would race
-    // restoreSession against generateFlowchart on the same keypress.
-    elements.sessionRestoreInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.ctrlKey) {
+    // Plain Enter (no modifier keys) in the session input triggers restore.
+    // Ctrl+Enter is intentionally NOT handled here so it bubbles to the
+    // document handler and stays the generate shortcut - handling it in both
+    // would race restoreSession against generateFlowchart on the same
+    // keypress. Shift/Alt/Meta+Enter are excluded too, so an in-progress
+    // key combo doesn't accidentally fire restore.
+    elements.sessionInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
             e.preventDefault();
             restoreSession();
         }

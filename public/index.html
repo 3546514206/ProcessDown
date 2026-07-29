@@ -31,6 +31,24 @@
                 <div class="panel-header">
                     <h2>输入</h2>
                 </div>
+                <!-- Session Section: a single box that shows the current id and
+                     accepts a pasted id to restore. Lives above the textarea so
+                     the session is the most prominent control in the panel. -->
+                <div class="session-section">
+                    <div class="session-bar">
+                        <label for="session-input" class="session-label">会话</label>
+                        <input id="session-input" class="session-input" type="text" placeholder="粘贴会话 ID 恢复历史对话..." spellcheck="false" title="当前会话 ID；清空后粘贴其他 ID 可恢复">
+                        <button id="btn-copy-session" class="btn btn-small" title="复制当前会话 ID" disabled>
+                            <svg viewBox="0 0 24 24" width="14" height="14">
+                                <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+                            </svg>
+                            复制
+                        </button>
+                        <button id="btn-restore-session" class="btn btn-small" title="恢复该会话 (Enter)">恢复</button>
+                    </div>
+                    <p class="session-hint">显示当前会话 ID；粘贴其他 ID 并点恢复可继续之前的对话并还原上一张图。</p>
+                </div>
+
                 <div class="panel-content">
                     <textarea id="input-prompt" class="input-area" placeholder="描述你想要生成的流程图...
 
@@ -45,25 +63,6 @@
                         </button>
                         <button id="btn-clear" class="btn btn-secondary">清空</button>
                     </div>
-                </div>
-
-                <!-- Session Section -->
-                <div class="session-section">
-                    <div class="session-current">
-                        <span class="session-label">当前会话</span>
-                        <code id="session-id-display" class="session-id-display" title="当前会话 ID">尚未创建会话</code>
-                        <button id="btn-copy-session" class="btn btn-small" title="复制会话 ID" disabled>
-                            <svg viewBox="0 0 24 24" width="14" height="14">
-                                <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
-                            </svg>
-                            复制
-                        </button>
-                    </div>
-                    <div class="session-restore">
-                        <input id="session-restore-input" class="session-restore-input" type="text" placeholder="粘贴会话 ID 以恢复之前的对话..." spellcheck="false">
-                        <button id="btn-restore-session" class="btn btn-small">恢复</button>
-                    </div>
-                    <p class="session-hint">填入之前的会话 ID 可继续对话并恢复上一张图；会话过期或从未创建时会提示。</p>
                 </div>
 
                 <!-- Code Editor Section -->
