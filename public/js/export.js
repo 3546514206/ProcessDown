@@ -56,11 +56,11 @@ const exportModule = {
         try {
             const theme = localStorage.getItem('theme') || 'dark';
 
-            const response = await fetch('/api/export/png', {
+            // 走 apiFetch：自动带 Bearer 登录态，且 401 时清 token 弹登录遮罩
+            // （原生 fetch 会在 token 过期时卡在错误 toast）。apiFetch 已设
+            // Content-Type，这里不再重复传 headers。
+            const response = await window.app.apiFetch('/api/export/png', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify({
                     svg: svgString,
                     scale: scale,

@@ -1,21 +1,135 @@
 /**
  * API Routes
  * Handles all /api endpoints
+ *
+ * 用户作用域：/api/session、/api/session/check、/api/generate、/api/sessions
+ * 均基于 req.user（由 authUser 中间件注入）派生该用户的 SessionStore，
+ * 指向 run/users/<username>/sessions/。register/login/health/config 不需要登录。
  */
 
-const url = require('url');
+const path = require('path');
 const logger = require('../utils/logger');
 const GeneratorService = require('../services/generator');
 const ExportService = require('../services/export');
 const { SessionStore } = require('../services/sessionStore');
+const { UserStore } = require('../services/userStore');
 const { validateGenerateRequest } = require('../middleware/validator');
 
 function createRouter(config) {
     const generator = new GeneratorService(config);
     const exportService = new ExportService(config);
-    const sessionStore = new SessionStore(config);
+    const userStore = new UserStore(config);
+
+    // 每用户 SessionStore 缓存：避免每次请求都触发构造函数里的 mkdirSync。
+    // 用户数有限，Map 不会膨胀；SessionStore 构造本身幂等，重复创建也无副作用。
+    const sessionStores = new Map();
+    function sessionStoreFor(req) {
+        const username = req.user;
+        let store = sessionStores.get(username);
+        if (!store) {
+            store = new SessionStore({
+                session: {
+                    dir: path.join(config.users.dir, username, 'sessions'),
+                    maxHistory: config.session.maxHistory,
+                    ttlDays: config.session.ttlDays
+                }
+            });
+            sessionStores.set(username, store);
+        }
+        return store;
+    }
 
     return {
+        /**
+         * POST /api/auth/register
+         * 注册新用户并直接签发 token（省去注册后立刻登录的一步）。
+         */
+        register(req, res) {
+            if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method Not Allowed', message: 'Use POST to register' }));
+                return;
+            }
+            const { username, password } = req.body || {};
+            const result = userStore.register(username, password);
+            if (result.error) {
+                const { code, message } = REGISTER_ERRORS[result.error];
+                res.writeHead(code, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: result.error, message }));
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, token: result.token, username: result.username }));
+        },
+
+        /**
+         * POST /api/auth/login
+         * 校验密码后轮换 token 返回。用户名/密码错误统一 401，不区分是否存在，
+         * 避免用户名枚举。
+         */
+        login(req, res) {
+            if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method Not Allowed', message: 'Use POST to login' }));
+                return;
+            }
+            const { username, password } = req.body || {};
+            const result = userStore.login(username, password);
+            if (result.error) {
+                res.writeHead(401, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'invalid_credentials', message: '用户名或密码错误' }));
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, token: result.token, username: result.username }));
+        },
+
+        /**
+         * POST /api/auth/logout
+         * 清空当前用户的 profile.token，使已下发 token 立即失效。幂等。
+         */
+        logout(req, res) {
+            if (req.method !== 'POST') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method Not Allowed', message: 'Use POST to logout' }));
+                return;
+            }
+            userStore.logout(req.user);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true }));
+        },
+
+        /**
+         * GET /api/auth/me
+         * 探活当前 token：authUser 通过即说明 token 有效，回显用户名。
+         * 前端启动时用它判断登录态。
+         */
+        me(req, res) {
+            if (req.method !== 'GET') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method Not Allowed', message: 'Use GET for /api/auth/me' }));
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, username: req.user }));
+        },
+
+        /**
+         * GET /api/sessions
+         * 列出当前用户所有历史会话（summary 取首轮提示词前 30 字，按更新时间倒序）。
+         * 供左侧抽屉渲染。
+         */
+        listSessions(req, res) {
+            if (req.method !== 'GET') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Method Not Allowed', message: 'Use GET for /api/sessions' }));
+                return;
+            }
+            const sessions = userStore.listSessions(req.user);
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, sessions }));
+        },
+
         /**
          * POST /api/session
          * Create a new session and return its id. The frontend lazily requests
@@ -36,6 +150,7 @@ function createRouter(config) {
             }
 
             try {
+                const sessionStore = sessionStoreFor(req);
                 const sessionId = sessionStore.create();
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ success: true, sessionId }));
@@ -90,6 +205,8 @@ function createRouter(config) {
             // before sending.
             const sessionId = rawId.trim();
 
+            const sessionStore = sessionStoreFor(req);
+
             // Shape check before any filesystem touch - never let an untrusted
             // id near the disk even though exists() also guards internally.
             if (!sessionStore.isValidId(sessionId)) {
@@ -140,28 +257,34 @@ function createRouter(config) {
                 const { prompt, mermaid: currentMermaid, sessionId } = body;
 
                 // sessionId is optional: without it we run a pure single-turn
-                // generation (keeps curl and legacy clients working). When
-                // present it must pass the uuid-shape check — the validation
-                // lives here rather than in validator.js because the uuid
-                // rules belong to SessionStore.
-                if (sessionId !== undefined && !sessionStore.isValidId(sessionId)) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        error: 'Validation Error',
-                        message: 'Invalid sessionId format'
-                    }));
-                    return;
+                // generation (keeps curl and legacy clients working). Only
+                // resolve the per-user store when a sessionId is present, so a
+                // sessionId-less request has no filesystem side effect (no user
+                // dir created). When present it must pass the uuid-shape check
+                // - the validation lives here rather than in validator.js
+                // because the uuid rules belong to SessionStore.
+                let sessionStore = null;
+                if (sessionId !== undefined) {
+                    sessionStore = sessionStoreFor(req);
+                    if (!sessionStore.isValidId(sessionId)) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({
+                            error: 'Validation Error',
+                            message: 'Invalid sessionId format'
+                        }));
+                        return;
+                    }
                 }
 
                 // A valid-but-unknown id (e.g. cleaned up after a server
                 // restart) is transparently recreated with empty history
-                const history = sessionId ? sessionStore.readHistory(sessionId) : [];
+                const history = sessionStore ? sessionStore.readHistory(sessionId) : [];
 
                 // Generate Mermaid code with multi-turn context
                 const generatedCode = await generator.generate(prompt, currentMermaid, history);
 
                 let responseHistory = [];
-                if (sessionId) {
+                if (sessionStore) {
                     try {
                         sessionStore.append(sessionId, prompt, generatedCode);
                         responseHistory = sessionStore.readHistory(sessionId).slice(-10);
@@ -333,5 +456,12 @@ function createRouter(config) {
         }
     };
 }
+
+// register 错误码 -> HTTP 状态与提示的映射。集中一处便于审阅与扩展。
+const REGISTER_ERRORS = {
+    invalid_username: { code: 400, message: '用户名需为 3-32 位字母数字、下划线或连字符' },
+    invalid_password: { code: 400, message: '密码至少 6 位' },
+    user_exists: { code: 409, message: '用户名已存在' }
+};
 
 module.exports = createRouter;

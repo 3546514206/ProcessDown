@@ -13,11 +13,14 @@ GeneratorService.prototype.generate = async () => 'flowchart TD\n A-->B';
 
 const createRouter = require('../../src/routes/api');
 
-// Helper to create mock request/response
+// Helper to create mock request/response. req.user simulates the username
+// injected by authUser middleware; the per-user SessionStore derives its dir
+// from config.users.dir + req.user, so tests point that at tempDir.
 function createMockReq(method = 'POST', body = {}) {
     return {
         method,
-        body
+        body,
+        user: 'testuser'
     };
 }
 
@@ -64,6 +67,10 @@ describe('API Routes', () => {
                 maxHistory: 20,
                 ttlDays: 7
             },
+            users: {
+                // 用户专有目录指向 tempDir，会话落到 tempDir/testuser/sessions/
+                dir: tempDir
+            },
             llm: {
                 baseUrl: 'http://fake',
                 apiKey: 'fake-key',
@@ -75,7 +82,7 @@ describe('API Routes', () => {
             server: { port: 3000, timeout: 30000 },
             cors: { enabled: true, origins: ['*'] },
             rateLimit: { enabled: false, maxRequests: 100, windowMs: 60000 },
-            auth: { enabled: false },
+            auth: { enabled: false, tokenTtlDays: 7 },
             health: { checkLlm: false }
         };
         router = createRouter(config);
@@ -105,7 +112,7 @@ describe('API Routes', () => {
             assert.match(body.sessionId, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
             // Verify folder was created
-            const sessionDir = path.join(tempDir, body.sessionId);
+            const sessionDir = path.join(tempDir, 'testuser', 'sessions', body.sessionId);
             assert.ok(fs.existsSync(sessionDir));
             assert.ok(fs.existsSync(path.join(sessionDir, 'history.json')));
         });
@@ -157,7 +164,7 @@ describe('API Routes', () => {
             assert.strictEqual(body.lastMermaid, null);
             // Must not create the folder as a side effect
             assert.strictEqual(
-                fs.existsSync(path.join(tempDir, '550e8400-e29b-41d4-a716-446655440000')),
+                fs.existsSync(path.join(tempDir, 'testuser', 'sessions', '550e8400-e29b-41d4-a716-446655440000')),
                 false
             );
         });
@@ -240,7 +247,7 @@ describe('API Routes', () => {
             assert.ok(body.success);
 
             // Folder should be created and have history
-            const sessionDir = path.join(tempDir, fakeId);
+            const sessionDir = path.join(tempDir, 'testuser', 'sessions', fakeId);
             assert.ok(fs.existsSync(sessionDir));
             const historyPath = path.join(sessionDir, 'history.json');
             assert.ok(fs.existsSync(historyPath));
@@ -257,7 +264,7 @@ describe('API Routes', () => {
             const res2 = createMockRes();
             await router.generate(req2, res2);
 
-            const historyPath = path.join(tempDir, '550e8400-e29b-41d4-a716-446655440000', 'history.json');
+            const historyPath = path.join(tempDir, 'testuser', 'sessions', '550e8400-e29b-41d4-a716-446655440000', 'history.json');
             const history = JSON.parse(fs.readFileSync(historyPath, 'utf-8'));
             assert.strictEqual(history.length, 4); // 2 rounds
             assert.strictEqual(history[0].content, 'round 1');

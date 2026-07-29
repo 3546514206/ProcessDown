@@ -10,12 +10,21 @@
     <div class="app-container">
         <!-- Header -->
         <header class="app-header">
-            <div class="logo">
-                <h1>ProcessDown</h1>
-                <span class="subtitle">AI 驱动的流程图生成器</span>
-                <span class="support-info">支持流程图、时序图、状态图、类图、ER 图、甘特图、饼图等 · <a href="https://mermaid.ai/open-source/intro/" target="_blank" rel="noopener">mermaid 官方文档</a>（需互联网访问）</span>
+            <div class="header-left">
+                <button id="btn-toggle-drawer" class="icon-btn" title="历史会话">
+                    <svg viewBox="0 0 24 24" width="20" height="20">
+                        <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
+                    </svg>
+                </button>
+                <div class="logo">
+                    <h1>ProcessDown</h1>
+                    <span class="subtitle">AI 驱动的流程图生成器</span>
+                    <span class="support-info">支持流程图、时序图、状态图、类图、ER 图、甘特图、饼图等 · <a href="https://mermaid.ai/open-source/intro/" target="_blank" rel="noopener">mermaid 官方文档</a>（需互联网访问）</span>
+                </div>
             </div>
             <div class="header-actions">
+                <span id="user-badge" class="user-badge"></span>
+                <button id="btn-logout" class="btn btn-small" title="登出">登出</button>
                 <button id="btn-fullscreen" class="icon-btn" title="全屏 (F11)">
                     <svg viewBox="0 0 24 24" width="20" height="20">
                         <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
@@ -30,23 +39,6 @@
             <div class="panel panel-left" id="panel-left">
                 <div class="panel-header">
                     <h2>输入</h2>
-                </div>
-                <!-- Session Section: a single box that shows the current id and
-                     accepts a pasted id to restore. Lives above the textarea so
-                     the session is the most prominent control in the panel. -->
-                <div class="session-section">
-                    <div class="session-bar">
-                        <label for="session-input" class="session-label">会话</label>
-                        <input id="session-input" class="session-input" type="text" placeholder="粘贴会话 ID 恢复历史对话..." spellcheck="false" title="当前会话 ID；清空后粘贴其他 ID 可恢复">
-                        <button id="btn-copy-session" class="btn btn-small" title="复制当前会话 ID" disabled>
-                            <svg viewBox="0 0 24 24" width="14" height="14">
-                                <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
-                            </svg>
-                            复制
-                        </button>
-                        <button id="btn-restore-session" class="btn btn-small" title="恢复该会话 (Enter)">恢复</button>
-                    </div>
-                    <p class="session-hint">显示当前会话 ID；粘贴其他 ID 并点恢复可继续之前的对话并还原上一张图。</p>
                 </div>
 
                 <div class="panel-content">
@@ -167,6 +159,45 @@
             <span id="status-text" class="status-ready">就绪</span>
             <span id="api-config" class="api-config"></span>
         </footer>
+    </div>
+
+    <!-- History Drawer: 左侧可收回的历史会话子页面 -->
+    <aside class="history-drawer" id="history-drawer">
+        <div class="drawer-header">
+            <h2>历史会话</h2>
+            <div class="drawer-actions">
+                <button id="btn-new-session" class="btn btn-small" title="开始新会话">新建</button>
+                <button id="btn-close-drawer" class="icon-btn" title="收起历史会话" aria-label="收起历史会话">
+                    <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+            </div>
+        </div>
+        <div class="drawer-list" id="history-list">
+            <p class="drawer-empty">暂无历史会话</p>
+        </div>
+    </aside>
+
+    <!-- Login Mask: 未登录时遮住主界面 -->
+    <div class="login-mask" id="login-mask" hidden>
+        <div class="login-card">
+            <h1 class="login-title">ProcessDown</h1>
+            <p class="login-subtitle">AI 驱动的流程图生成器</p>
+            <div class="login-tabs">
+                <button type="button" class="login-tab active" data-tab="login">登录</button>
+                <button type="button" class="login-tab" data-tab="register">注册</button>
+            </div>
+            <form id="login-form" class="login-form">
+                <input id="login-username" class="login-input" placeholder="用户名" autocomplete="username" required>
+                <input id="login-password" class="login-input" type="password" placeholder="密码" autocomplete="current-password" required>
+                <button type="submit" class="btn btn-primary login-submit">登录</button>
+            </form>
+            <form id="register-form" class="login-form" hidden>
+                <input id="register-username" class="login-input" placeholder="用户名（3-32 位字母数字 _ -）" autocomplete="username" required>
+                <input id="register-password" class="login-input" type="password" placeholder="密码（至少 6 位）" autocomplete="new-password" required>
+                <button type="submit" class="btn btn-primary login-submit">注册</button>
+            </form>
+            <p id="login-message" class="login-message"></p>
+        </div>
     </div>
 
     <!-- Toast Container -->

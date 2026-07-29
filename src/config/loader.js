@@ -22,7 +22,8 @@ const OPTIONAL_ENV_VARS = [
     'NODE_ENV',
     'REQUEST_TIMEOUT',
     'SESSION_MAX_HISTORY',
-    'SESSION_TTL_DAYS'
+    'SESSION_TTL_DAYS',
+    'AUTH_TOKEN_TTL_DAYS'
 ];
 
 /**
@@ -153,6 +154,11 @@ function loadConfig() {
             maxHistory: envInt('SESSION_MAX_HISTORY', fileConfig.session?.maxHistory ?? 20),
             ttlDays: envInt('SESSION_TTL_DAYS', fileConfig.session?.ttlDays ?? 7)
         },
+        users: {
+            // 用户专有目录：run/users/<username>/ 下存 profile.json 与 sessions/<uuid>/
+            // 仅走 config.json，理由同 session.dir
+            dir: fileConfig.users?.dir || path.join(process.cwd(), 'run', 'users')
+        },
         llm: {
             baseUrl: process.env.LLM_API_BASE_URL,
             apiKey: process.env.LLM_API_KEY,
@@ -167,7 +173,10 @@ function loadConfig() {
         },
         auth: {
             enabled: !!process.env.API_AUTH_KEY,
-            apiKey: process.env.API_AUTH_KEY || null
+            apiKey: process.env.API_AUTH_KEY || null,
+            // 登录 token 有效期（天）：<=0 表示永不过期。沿用 envInt 以兼容手改的
+            // 非 数字 config.json（NaN 回退到默认 7）
+            tokenTtlDays: envInt('AUTH_TOKEN_TTL_DAYS', fileConfig.auth?.tokenTtlDays ?? 7)
         },
         health: {
             // LLM reachability probe in /api/health. Disabled by default:

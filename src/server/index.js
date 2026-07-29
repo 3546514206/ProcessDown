@@ -9,6 +9,8 @@ const fs = require('fs');
 const { getConfig } = require('../config/loader');
 const logger = require('../utils/logger');
 const authMiddleware = require('../middleware/auth');
+const authUserMiddleware = require('../middleware/authUser');
+const { UserStore } = require('../services/userStore');
 const corsMiddleware = require('../middleware/cors');
 const rateLimitMiddleware = require('../middleware/rateLimit');
 const { validatorMiddleware } = require('../middleware/validator');
@@ -28,8 +30,28 @@ const cors = corsMiddleware(config);
 const rateLimit = rateLimitMiddleware(config);
 const validator = validatorMiddleware;
 
+// 用户登录态鉴权：仅作用于需要登录的路由（见下方 PROTECTED_USER_ROUTES）。
+// register/login/health/config 不在此列，故未登录也能注册/登录。
+const userStore = new UserStore(config);
+const authUser = authUserMiddleware(userStore);
+
 // API router
 const api = createApiRouter(config);
+
+// 需要登录（Bearer token）的路由集合。与 auth.js 的 API-Key 层正交：
+// API-Key 仍作用于全部 /api/（health 与 /api/auth/* 除外），本层在此基础上
+// 要求用户登录态。regenerate/export/png 同属“画图”语义，纳入保护以闭合
+// 需求 2（否则默认部署下可被 curl 白嫖 LLM 或打 CPU）。
+const PROTECTED_USER_ROUTES = new Set([
+    '/api/generate',
+    '/api/regenerate',
+    '/api/export/png',
+    '/api/session',
+    '/api/session/check',
+    '/api/sessions',
+    '/api/auth/me',
+    '/api/auth/logout'
+]);
 
 // MIME types for static files
 const MIME_TYPES = {
@@ -155,6 +177,13 @@ const server = http.createServer(async (req, res) => {
             }
 
             // API routing
+            // 受保护路由先过用户登录态鉴权：失败则 authUser 已同步 res.end()，
+            // headersSent 为真，这里直接 return，不会落到 switch。
+            if (PROTECTED_USER_ROUTES.has(parsedUrl.pathname)) {
+                authUser(req, res, () => {});
+                if (res.headersSent) return;
+            }
+
             switch (parsedUrl.pathname) {
                 case '/api/generate':
                     await api.generate(req, res);
@@ -178,6 +207,26 @@ const server = http.createServer(async (req, res) => {
 
                 case '/api/session/check':
                     await api.checkSession(req, res);
+                    break;
+
+                case '/api/sessions':
+                    api.listSessions(req, res);
+                    break;
+
+                case '/api/auth/register':
+                    api.register(req, res);
+                    break;
+
+                case '/api/auth/login':
+                    api.login(req, res);
+                    break;
+
+                case '/api/auth/logout':
+                    api.logout(req, res);
+                    break;
+
+                case '/api/auth/me':
+                    api.me(req, res);
                     break;
 
                 case '/api/export/png':
@@ -222,6 +271,8 @@ const PORT = config.server.port;
 const HOST = config.server.host || '0.0.0.0';
 
 server.listen(PORT, HOST, () => {
+    // 仅清理旧的全局会话目录 run/session/。run/users/ 下的用户账号与
+    // 历史会话绝不自动清理（需永久保留）。
     cleanupExpiredSessions(config);
     logger.info(`🚀 ProcessDown server running on http://${HOST}:${PORT}`);
     logger.info(`   Environment: ${process.env.NODE_ENV || 'development'}`);

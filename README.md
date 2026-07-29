@@ -182,9 +182,20 @@ ProcessDown/
 - 所有敏感配置（API Key、baseUrl）必须通过环境变量注入
 - 配置文件不包含任何敏感信息
 - 支持 API 认证（通过 `X-API-Key` header）
+- 用户登录：密码用 scrypt + 随机 salt 派生，绝不落盘明文；登录态用 Bearer token（`Authorization: Bearer <token>`）
 - CORS 白名单配置
 - 请求体大小限制（1MB）
 - 输入长度限制（5000 字符）
+
+### ⚠️ TLS 前置要求
+
+启用用户登录后，**必须经 TLS 反代（HTTPS）访问**，否则登录密码与 token 会以明文在网络上传输，可被中间人截获。公网部署建议：
+
+1. 将 `SERVER_HOST` 绑定为 `127.0.0.1`（仅本机可访问）。
+2. 前置 Nginx / Caddy 等终止 TLS，再反代到本服务端口。
+3. 通过 `ALLOWED_ORIGINS` 限定跨域来源。
+
+跨域部署时，CORS 已放行 `Authorization` 头以支持 Bearer 预检；同源部署无感。
 
 ## 技术栈
 

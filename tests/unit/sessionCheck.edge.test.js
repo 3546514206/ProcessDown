@@ -27,7 +27,7 @@ const createRouter = require('../../src/routes/api');
 const { SessionStore } = require('../../src/services/sessionStore');
 
 function createMockReq(method = 'POST', body = {}) {
-    return { method, body };
+    return { method, body, user: 'testuser' };
 }
 
 function createMockRes() {
@@ -88,6 +88,7 @@ describe('SessionStore.exists() - edge cases', () => {
 
 describe('POST /api/session/check - edge cases', () => {
     let tempDir;
+    let sessionsDir;
     let config;
     let router;
     let seedStore;
@@ -105,6 +106,8 @@ describe('POST /api/session/check - edge cases', () => {
         }
         config = {
             session: { dir: tempDir, maxHistory: 20, ttlDays: 7 },
+            // 用户会话目录指向 tempDir，路由据此派生 tempDir/testuser/sessions/
+            users: { dir: tempDir },
             llm: {
                 baseUrl: 'http://fake', apiKey: 'fake-key', model: 'fake-model',
                 temperature: 0.7, maxTokens: 1000, timeout: 30000
@@ -112,14 +115,16 @@ describe('POST /api/session/check - edge cases', () => {
             server: { port: 3000, timeout: 30000 },
             cors: { enabled: true, origins: ['*'] },
             rateLimit: { enabled: false, maxRequests: 100, windowMs: 60000 },
-            auth: { enabled: false },
+            auth: { enabled: false, tokenTtlDays: 7 },
             health: { checkLlm: false }
         };
         router = createRouter(config);
-        // A second SessionStore over the same dir lets us seed history
-        // directly with distinct assistant contents, instead of going through
-        // the mocked generate route (which always returns the same string).
-        seedStore = new SessionStore({ session: { dir: tempDir, maxHistory: 20, ttlDays: 7 } });
+        // A second SessionStore over the SAME user sessions dir lets us seed
+        // history directly with distinct assistant contents, instead of going
+        // through the mocked generate route (which always returns the same
+        // string). Must match the dir the router derives for req.user.
+        sessionsDir = path.join(tempDir, 'testuser', 'sessions');
+        seedStore = new SessionStore({ session: { dir: sessionsDir, maxHistory: 20, ttlDays: 7 } });
     });
 
     it('should return 400 "sessionId field is required" for an empty string', () => {
@@ -190,8 +195,8 @@ describe('POST /api/session/check - edge cases', () => {
         // No assistant message to render - the restore loop must fall through
         // to null rather than throw or return a user message as the diagram.
         const id = '550e8400-e29b-41d4-a716-446655440000';
-        fs.mkdirSync(path.join(tempDir, id));
-        fs.writeFileSync(path.join(tempDir, id, 'history.json'), JSON.stringify([
+        fs.mkdirSync(path.join(sessionsDir, id));
+        fs.writeFileSync(path.join(sessionsDir, id, 'history.json'), JSON.stringify([
             { role: 'user', content: 'q1', ts: 1 },
             { role: 'user', content: 'q2', ts: 2 }
         ]));
@@ -222,8 +227,8 @@ describe('POST /api/session/check - edge cases', () => {
         // or in-progress file could have a trailing user entry. The probe must
         // still return the most recent assistant, not be confused by the tail.
         const id = '550e8400-e29b-41d4-a716-446655440000';
-        fs.mkdirSync(path.join(tempDir, id));
-        fs.writeFileSync(path.join(tempDir, id, 'history.json'), JSON.stringify([
+        fs.mkdirSync(path.join(sessionsDir, id));
+        fs.writeFileSync(path.join(sessionsDir, id, 'history.json'), JSON.stringify([
             { role: 'user', content: 'q1', ts: 1 },
             { role: 'assistant', content: 'a1', ts: 2 },
             { role: 'assistant', content: 'a2', ts: 3 },
@@ -271,8 +276,8 @@ describe('POST /api/session/check - edge cases', () => {
         // recorded here so any future move to strict read-only semantics makes
         // the behavior change explicit. See developer R1 openIssues.
         const id = '550e8400-e29b-41d4-a716-446655440000';
-        const historyPath = path.join(tempDir, id, 'history.json');
-        fs.mkdirSync(path.join(tempDir, id));
+        const historyPath = path.join(sessionsDir, id, 'history.json');
+        fs.mkdirSync(path.join(sessionsDir, id));
         fs.writeFileSync(historyPath, 'not valid json');
 
         const res = createMockRes();
@@ -285,7 +290,7 @@ describe('POST /api/session/check - edge cases', () => {
         // File was reset to a valid empty array by _loadRaw's recovery path
         assert.strictEqual(fs.readFileSync(historyPath, 'utf-8'), '[]');
         // Original corrupt bytes were backed up, not lost
-        const files = fs.readdirSync(path.join(tempDir, id));
+        const files = fs.readdirSync(path.join(sessionsDir, id));
         assert.ok(files.some(f => f.startsWith('history.json.corrupt-')), 'backup should exist');
     });
 });

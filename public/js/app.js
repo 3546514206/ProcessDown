@@ -1,6 +1,9 @@
 /**
  * Main Application Logic
- * Handles user input, API calls, and state management
+ * Handles user auth, API calls, history drawer, and state management.
+ *
+ * 登录态：token 存 localStorage('pd_token')，每次请求带 Authorization: Bearer。
+ * 会话 id 仍在内存（state.sessionId），浏览器刷新后通过左侧抽屉从历史恢复。
  */
 
 // State
@@ -10,14 +13,10 @@ const state = {
     theme: localStorage.getItem('theme') || 'dark',
     zoom: 1,
     isGenerating: false,
-    // In-memory only, never localStorage: a browser refresh loses it on
-    // purpose, and the next generation starts a brand-new session
+    user: null,
+    // In-memory only: 标识当前正在编辑的会话。null 表示尚未创建，首次生成时懒申请。
     sessionId: null
 };
-
-// Mirrors the server-side UUID_PATTERN in sessionStore.js so the client can
-// fail fast on obviously-wrong input before hitting the network.
-const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 // DOM Elements
 const elements = {
@@ -30,9 +29,25 @@ const elements = {
     codeStatus: document.getElementById('code-status'),
     toastContainer: document.getElementById('toast-container'),
     apiConfig: document.getElementById('api-config'),
-    btnCopySession: document.getElementById('btn-copy-session'),
-    sessionInput: document.getElementById('session-input'),
-    btnRestoreSession: document.getElementById('btn-restore-session')
+    // 登录遮罩
+    loginMask: document.getElementById('login-mask'),
+    loginForm: document.getElementById('login-form'),
+    registerForm: document.getElementById('register-form'),
+    loginUsername: document.getElementById('login-username'),
+    loginPassword: document.getElementById('login-password'),
+    registerUsername: document.getElementById('register-username'),
+    registerPassword: document.getElementById('register-password'),
+    loginMessage: document.getElementById('login-message'),
+    loginTabs: document.querySelectorAll('.login-tab'),
+    // 历史抽屉
+    drawer: document.getElementById('history-drawer'),
+    btnToggleDrawer: document.getElementById('btn-toggle-drawer'),
+    btnNewSession: document.getElementById('btn-new-session'),
+    btnCloseDrawer: document.getElementById('btn-close-drawer'),
+    historyList: document.getElementById('history-list'),
+    // 顶栏
+    userBadge: document.getElementById('user-badge'),
+    btnLogout: document.getElementById('btn-logout')
 };
 
 // Initialize Mermaid
@@ -70,18 +85,305 @@ function updateCodeStatus(text, type = 'ready') {
     elements.codeStatus.textContent = text;
 }
 
+// ---- Auth helpers ---------------------------------------------------------
+
+function getToken() {
+    return localStorage.getItem('pd_token');
+}
+
+function setToken(token) {
+    localStorage.setItem('pd_token', token);
+}
+
+function clearAuth() {
+    localStorage.removeItem('pd_token');
+    state.user = null;
+    state.sessionId = null;
+}
+
+/**
+ * 统一的 fetch 封装：自动带 Bearer token；遇 401 清登录态并弹登录遮罩。
+ * 用 401 作为“登录失效”的唯一信号，避免每个调用点重复处理。
+ */
+async function apiFetch(url, options = {}) {
+    const token = getToken();
+    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401) {
+        clearAuth();
+        showLoginMask();
+        throw new Error('登录已失效，请重新登录');
+    }
+    return res;
+}
+
+function showLoginMask() {
+    elements.loginMask.hidden = false;
+    elements.userBadge.textContent = '';
+}
+
+function hideLoginMask() {
+    elements.loginMask.hidden = true;
+    elements.loginMessage.textContent = '';
+}
+
+function switchLoginTab(tab) {
+    const isLogin = tab === 'login';
+    elements.loginForm.hidden = !isLogin;
+    elements.registerForm.hidden = isLogin;
+    elements.loginTabs.forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === tab);
+    });
+    elements.loginMessage.textContent = '';
+}
+
+// 启动时探活 token：有效则进入应用，无效则弹登录遮罩。
+async function checkAuth() {
+    const token = getToken();
+    if (!token) {
+        showLoginMask();
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/auth/me');
+        if (res.ok) {
+            const data = await res.json();
+            state.user = data.username;
+            hideLoginMask();
+            elements.userBadge.textContent = state.user;
+            await loadApp();
+        } else {
+            clearAuth();
+            showLoginMask();
+        }
+    } catch (e) {
+        // apiFetch 已对 401 弹了遮罩；网络错误也退回登录遮罩
+        if (!elements.loginMask.hidden) return;
+        showLoginMask();
+    }
+}
+
+async function handleLogin(event) {
+    event.preventDefault();
+    const username = elements.loginUsername.value.trim();
+    const password = elements.loginPassword.value;
+    if (!username || !password) {
+        elements.loginMessage.textContent = '请输入用户名和密码';
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/auth/login', {
+            method: 'POST',
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            elements.loginMessage.textContent = data.message || '登录失败';
+            return;
+        }
+        setToken(data.token);
+        state.user = data.username;
+        hideLoginMask();
+        elements.userBadge.textContent = state.user;
+        elements.loginForm.reset();
+        await loadApp();
+    } catch (e) {
+        elements.loginMessage.textContent = e.message || '登录失败';
+    }
+}
+
+async function handleRegister(event) {
+    event.preventDefault();
+    const username = elements.registerUsername.value.trim();
+    const password = elements.registerPassword.value;
+    if (!username || !password) {
+        elements.loginMessage.textContent = '请输入用户名和密码';
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            elements.loginMessage.textContent = data.message || '注册失败';
+            return;
+        }
+        // 注册成功即签发 token，省去再登录一步
+        setToken(data.token);
+        state.user = data.username;
+        hideLoginMask();
+        elements.userBadge.textContent = state.user;
+        elements.registerForm.reset();
+        await loadApp();
+    } catch (e) {
+        elements.loginMessage.textContent = e.message || '注册失败';
+    }
+}
+
+async function handleLogout() {
+    try {
+        await apiFetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {
+        // 即使网络失败也强制本地登出，避免卡在失效 token 上
+    }
+    clearAuth();
+    state.mermaidCode = '';
+    state.history = [];
+    state.sessionId = null;
+    elements.codeEditor.value = '';
+    if (window.mermaidRender) {
+        window.mermaidRender.clear();
+    }
+    elements.historyList.innerHTML = '<p class="drawer-empty">暂无历史会话</p>';
+    showLoginMask();
+    updateStatus('已登出', 'ready');
+    updateCodeStatus('就绪', 'ready');
+}
+
+// ---- History drawer -------------------------------------------------------
+
+function toggleDrawer() {
+    elements.drawer.classList.toggle('open');
+}
+
+// 收起抽屉：显式移除 open（而非 toggle），避免在已收起时误触发打开
+function closeDrawer() {
+    elements.drawer.classList.remove('open');
+}
+
+async function loadSessions() {
+    try {
+        const res = await apiFetch('/api/sessions');
+        const data = await res.json();
+        if (res.ok) {
+            renderHistoryList(data.sessions || []);
+        }
+    } catch (e) {
+        // 加载失败不阻断主功能，仅提示
+        console.error('Load sessions failed:', e);
+    }
+}
+
+function renderHistoryList(sessions) {
+    if (!sessions.length) {
+        elements.historyList.innerHTML = '<p class="drawer-empty">暂无历史会话</p>';
+        return;
+    }
+    elements.historyList.innerHTML = '';
+    for (const s of sessions) {
+        const item = document.createElement('div');
+        item.className = 'history-item';
+        if (s.sessionId === state.sessionId) {
+            item.classList.add('active');
+        }
+        item.dataset.sessionId = s.sessionId;
+        const summary = document.createElement('div');
+        summary.className = 'history-summary';
+        summary.textContent = s.summary || '（空会话）';
+        const time = document.createElement('div');
+        time.className = 'history-time';
+        time.textContent = formatTime(s.updatedAt);
+        item.appendChild(summary);
+        item.appendChild(time);
+        item.addEventListener('click', () => restoreFromHistory(s.sessionId));
+        elements.historyList.appendChild(item);
+    }
+}
+
+function formatTime(ms) {
+    if (!ms) return '';
+    const d = new Date(ms);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// 点击历史会话项：校验存在并恢复上一张图与当前 sessionId。
+async function restoreFromHistory(sessionId) {
+    if (state.isGenerating) {
+        showToast('生成中，请稍候', 'warning');
+        return;
+    }
+    try {
+        const res = await apiFetch('/api/session/check', {
+            method: 'POST',
+            body: JSON.stringify({ sessionId })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+            showToast(data.message || '恢复失败', 'error');
+            return;
+        }
+        if (data.exists) {
+            state.sessionId = data.sessionId;
+            if (data.lastMermaid) {
+                state.mermaidCode = data.lastMermaid;
+                elements.codeEditor.value = data.lastMermaid;
+                if (window.mermaidRender) {
+                    window.mermaidRender.render(data.lastMermaid);
+                }
+            } else {
+                // 会话存在但无图：清空画布，准备继续对话
+                state.mermaidCode = '';
+                elements.codeEditor.value = '';
+                if (window.mermaidRender) {
+                    window.mermaidRender.clear();
+                }
+            }
+            renderHistoryListActive();
+            updateStatus('已恢复会话', 'ready');
+            updateCodeStatus('已恢复', 'ready');
+            showToast('已恢复会话', 'success');
+        } else {
+            showToast('未找到该会话，可能已过期', 'warning');
+            await loadSessions();
+        }
+    } catch (e) {
+        showToast('恢复会话失败', 'error');
+    }
+}
+
+// 仅刷新列表中的 active 高亮，不重新请求
+function renderHistoryListActive() {
+    const items = elements.historyList.querySelectorAll('.history-item');
+    items.forEach(item => {
+        item.classList.toggle('active', item.dataset.sessionId === state.sessionId);
+    });
+}
+
+// 开始新会话：清空当前编辑/预览，下次生成时 ensureSession 申请新 id。
+function startNewSession() {
+    if (state.isGenerating) {
+        showToast('生成中，请稍候', 'warning');
+        return;
+    }
+    state.sessionId = null;
+    state.mermaidCode = '';
+    state.history = [];
+    elements.inputPrompt.value = '';
+    elements.codeEditor.value = '';
+    if (window.mermaidRender) {
+        window.mermaidRender.clear();
+    }
+    renderHistoryListActive();
+    updateStatus('就绪', 'ready');
+    updateCodeStatus('就绪', 'ready');
+    showToast('已开始新会话', 'info');
+}
+
+// ---- Session & generation -------------------------------------------------
+
 // Lazily create a session before the first generation. state.isGenerating
 // already blocks concurrent clicks, so this cannot race.
 async function ensureSession() {
     if (state.sessionId) return;
 
-    const response = await fetch('/api/session', {
-        method: 'POST',
-        // Required even with an empty body: the server rejects non-JSON
-        // POSTs under /api/ with 415
-        headers: {
-            'Content-Type': 'application/json'
-        }
+    const response = await apiFetch('/api/session', {
+        method: 'POST'
     });
 
     const data = await response.json();
@@ -89,87 +391,6 @@ async function ensureSession() {
         throw new Error(data.message || '会话创建失败');
     }
     state.sessionId = data.sessionId;
-    updateSessionDisplay();
-}
-
-// Reflect state.sessionId in the UI. The single input doubles as the display:
-// a real id is written back into it so the user can copy/eyeball it; null
-// clears it so the placeholder ("paste an id to restore") shows through.
-function updateSessionDisplay() {
-    if (state.sessionId) {
-        elements.sessionInput.value = state.sessionId;
-        elements.btnCopySession.disabled = false;
-    } else {
-        elements.sessionInput.value = '';
-        elements.btnCopySession.disabled = true;
-    }
-}
-
-// Copy the current sessionId to the clipboard (mirrors copyCode).
-async function copySessionId() {
-    if (!state.sessionId) {
-        showToast('尚无会话可复制', 'warning');
-        return;
-    }
-    try {
-        await navigator.clipboard.writeText(state.sessionId);
-        showToast('会话 ID 已复制到剪贴板', 'success');
-    } catch (error) {
-        showToast('复制失败', 'error');
-    }
-}
-
-// Restore a previous session by id. Format is checked client-side first to
-// avoid a round-trip for obviously-wrong input; the server re-checks and is
-// the source of truth. On success, the last assistant diagram is re-rendered.
-async function restoreSession() {
-    // Block restore while a generation is in flight: restore overwrites
-    // state.sessionId/mermaidCode while generate appends to the old id,
-    // silently misfiling the just-generated diagram into the previous session.
-    if (state.isGenerating) {
-        showToast('生成中，请稍候', 'warning');
-        return;
-    }
-    const input = elements.sessionInput.value.trim();
-    if (!input) {
-        showToast('请输入会话 ID', 'warning');
-        return;
-    }
-    if (!SESSION_ID_PATTERN.test(input)) {
-        showToast('UUID 格式不正确', 'error');
-        return;
-    }
-
-    try {
-        const response = await fetch('/api/session/check', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: input })
-        });
-        const data = await response.json();
-        if (!response.ok) {
-            showToast(data.message || '会话检查失败', 'error');
-            return;
-        }
-
-        if (data.exists) {
-            state.sessionId = data.sessionId;
-            updateSessionDisplay();
-            // Re-render the last diagram so the canvas reflects continuity
-            if (data.lastMermaid) {
-                state.mermaidCode = data.lastMermaid;
-                elements.codeEditor.value = data.lastMermaid;
-                if (window.mermaidRender) {
-                    window.mermaidRender.render(data.lastMermaid);
-                }
-            }
-            showToast('已恢复会话', 'success');
-        } else {
-            showToast('未找到该会话，可能已过期或从未创建', 'warning');
-        }
-    } catch (error) {
-        showToast('恢复会话失败', 'error');
-    }
 }
 
 // Generate flowchart
@@ -183,8 +404,6 @@ async function generateFlowchart() {
 
     state.isGenerating = true;
     elements.btnGenerate.disabled = true;
-    elements.btnRestoreSession.disabled = true;
-    elements.btnCopySession.disabled = true;
     elements.btnGenerate.querySelector('.btn-text').style.display = 'none';
     elements.btnGenerate.querySelector('.btn-loading').style.display = 'inline';
 
@@ -196,11 +415,8 @@ async function generateFlowchart() {
     try {
         await ensureSession();
 
-        const response = await fetch('/api/generate', {
+        const response = await apiFetch('/api/generate', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
             body: JSON.stringify({
                 prompt: prompt,
                 mermaid: state.mermaidCode || undefined,
@@ -228,6 +444,9 @@ async function generateFlowchart() {
             window.mermaidRender.render(data.mermaid);
         }
 
+        // 生成后刷新抽屉：新会话/新轮次应出现在历史列表顶部
+        loadSessions();
+
     } catch (error) {
         console.error('Generation error:', error);
         updateStatus('生成失败', 'error');
@@ -239,15 +458,6 @@ async function generateFlowchart() {
     } finally {
         state.isGenerating = false;
         elements.btnGenerate.disabled = false;
-        elements.btnRestoreSession.disabled = false;
-        // Re-sync the session box after generation. Covers two paths: (1) the
-        // user typed a pending id into the input without restoring -
-        // ensureSession returned early on the existing sessionId, leaving the
-        // box showing that pending id, so write the real sessionId back; (2)
-        // generation failed before a session was created - sessionId is null
-        // and this clears the box and disables copy. This also re-derives the
-        // copy button's disabled state, subsuming the old manual line.
-        updateSessionDisplay();
         elements.btnGenerate.querySelector('.btn-text').style.display = 'inline';
         elements.btnGenerate.querySelector('.btn-loading').style.display = 'none';
     }
@@ -302,7 +512,7 @@ function reinitMermaid() {
 // Load config from server
 async function loadConfig() {
     try {
-        const response = await fetch('/api/config');
+        const response = await apiFetch('/api/config');
         const config = await response.json();
 
         if (config.llm?.model) {
@@ -313,6 +523,14 @@ async function loadConfig() {
     } catch (error) {
         console.error('Failed to load config:', error);
     }
+}
+
+// 登录后加载应用：配置 + 历史会话
+async function loadApp() {
+    updateStatus('就绪', 'ready');
+    updateCodeStatus('就绪', 'ready');
+    loadConfig();
+    await loadSessions();
 }
 
 // Debounce function for code editor
@@ -350,8 +568,6 @@ function initEventListeners() {
     elements.btnGenerate.addEventListener('click', generateFlowchart);
     elements.btnClear.addEventListener('click', clearAll);
     elements.btnCopy.addEventListener('click', copyCode);
-    elements.btnCopySession.addEventListener('click', copySessionId);
-    elements.btnRestoreSession.addEventListener('click', restoreSession);
     elements.codeEditor.addEventListener('input', handleCodeChange);
     document.addEventListener('keydown', handleKeydown);
     elements.inputPrompt.addEventListener('keydown', (e) => {
@@ -362,27 +578,27 @@ function initEventListeners() {
             }
         }
     });
-    // Plain Enter (no modifier keys) in the session input triggers restore.
-    // Ctrl+Enter is intentionally NOT handled here so it bubbles to the
-    // document handler and stays the generate shortcut - handling it in both
-    // would race restoreSession against generateFlowchart on the same
-    // keypress. Shift/Alt/Meta+Enter are excluded too, so an in-progress
-    // key combo doesn't accidentally fire restore.
-    elements.sessionInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
-            e.preventDefault();
-            restoreSession();
-        }
+
+    // 登录/注册
+    elements.loginForm.addEventListener('submit', handleLogin);
+    elements.registerForm.addEventListener('submit', handleRegister);
+    elements.loginTabs.forEach(tab => {
+        tab.addEventListener('click', () => switchLoginTab(tab.dataset.tab));
     });
+    elements.btnLogout.addEventListener('click', handleLogout);
+
+    // 历史抽屉
+    elements.btnToggleDrawer.addEventListener('click', toggleDrawer);
+    elements.btnCloseDrawer.addEventListener('click', closeDrawer);
+    elements.btnNewSession.addEventListener('click', startNewSession);
 }
 
 // Initialize app
-function init() {
+async function init() {
     initMermaid();
     initEventListeners();
-    loadConfig();
-    updateStatus('就绪', 'ready');
-    updateSessionDisplay();
+    // 先尝试恢复登录态；checkAuth 内部决定是进入应用还是弹登录遮罩
+    await checkAuth();
 }
 
 // Start when DOM is ready
@@ -395,5 +611,6 @@ window.app = {
     copyCode,
     showToast,
     updateStatus,
-    reinitMermaid
+    reinitMermaid,
+    apiFetch
 };
