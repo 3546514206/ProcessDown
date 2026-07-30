@@ -595,6 +595,15 @@ function initEventListeners() {
     elements.btnToggleDrawer.addEventListener('click', toggleDrawer);
     elements.btnCloseDrawer.addEventListener('click', closeDrawer);
     elements.btnNewSession.addEventListener('click', startNewSession);
+
+    // 点击抽屉外部（主页面区域）自动收起：抽屉打开时，点击不在抽屉内、
+    // 也不在切换按钮上（切换按钮的点击交给 toggleDrawer 处理，避免开即关）。
+    document.addEventListener('click', (e) => {
+        if (!elements.drawer.classList.contains('open')) return;
+        if (elements.drawer.contains(e.target)) return;
+        if (elements.btnToggleDrawer.contains(e.target)) return;
+        closeDrawer();
+    });
 }
 
 // Initialize app

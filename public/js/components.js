@@ -55,7 +55,9 @@ const components = {
     },
 
     zoom(delta) {
-        this.scale = Math.max(0.1, Math.min(5, this.scale + delta));
+        // 比例缩放（按当前倍率增减）+ 上限 20x（2000%）：复杂流程图在 500% 下
+        // 仍看不清细节；线性步进在大倍率区间放大过慢，比例步进更自然。
+        this.scale = Math.max(0.1, Math.min(20, this.scale * (1 + delta)));
         this.applyTransform();
         this.updateZoomDisplay();
     },
