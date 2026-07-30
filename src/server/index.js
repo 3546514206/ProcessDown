@@ -75,20 +75,23 @@ function serveStaticFile(filePath, res) {
     const ext = path.extname(filePath).toLowerCase();
     const mimeType = MIME_TYPES[ext] || 'application/octet-stream';
 
-    fs.readFile(filePath, (err, data) => {
-        if (err) {
-            if (err.code === 'ENOENT') {
-                res.writeHead(404, { 'Content-Type': 'text/plain' });
-                res.end('Not Found');
-            } else {
-                res.writeHead(500, { 'Content-Type': 'text/plain' });
-                res.end('Server Error');
-            }
+    fs.stat(filePath, (err, stat) => {
+        if (err || !stat.isFile()) {
+            res.writeHead(404, { 'Content-Type': 'text/plain' });
+            res.end('Not Found');
             return;
         }
 
-        res.writeHead(200, { 'Content-Type': mimeType });
-        res.end(data);
+        // 流式传输 + Content-Length：3.3MB 的 mermaid.min.js 若用 readFile 一次性
+        // 读入内存再 end，慢网络/反代下易超时或中断（部分浏览器报“找不到”）。
+        // createReadStream 边读边发，Content-Length 让浏览器/反代正确判断进度。
+        // 静态资源缓存一天避免重复拉大文件；index.html 走 no-cache 保证更新可见。
+        res.writeHead(200, {
+            'Content-Type': mimeType,
+            'Content-Length': stat.size,
+            'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=86400'
+        });
+        fs.createReadStream(filePath).pipe(res);
     });
 }
 

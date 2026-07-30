@@ -474,6 +474,25 @@ body {
     fill: var(--text-primary);
 }
 
+.toggle-drawer-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+    border-radius: 6px;
+}
+
+.toggle-drawer-btn.active {
+    background: var(--accent-color);
+    color: #fff;
+    border-color: var(--accent-color);
+}
+
+.toggle-drawer-btn.active svg {
+    fill: #fff;
+}
+
 .btn-small:disabled {
     opacity: 0.5;
     cursor: not-allowed;

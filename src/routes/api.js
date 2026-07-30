@@ -305,11 +305,7 @@ function createRouter(config) {
             } catch (error) {
                 logger.error('Generate error:', error.message);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    error: 'Generation Failed',
-                    message: error.message,
-                    hint: '请确保输入的是流程图描述（如"用户登录流程"），而非对话内容'
-                }));
+                res.end(JSON.stringify(llmErrorResponse(error, 'Generation Failed')));
             }
         },
 
@@ -399,10 +395,7 @@ function createRouter(config) {
             } catch (error) {
                 logger.error('Regenerate error:', error.message);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    error: 'Regeneration Failed',
-                    message: error.message
-                }));
+                res.end(JSON.stringify(llmErrorResponse(error, 'Regeneration Failed')));
             }
         },
 
@@ -455,6 +448,25 @@ function createRouter(config) {
             }
         }
     };
+}
+
+// 根据错误特征生成用户可读的响应：网络/LLM 服务错误与输入错误区分开，
+// 避免网络故障时误导读图“输入不对”。原始 error.message 仍由 logger 记录，
+// 回传客户端的 message 做了脱敏（不暴露内网 LLM 地址等细节）。
+function llmErrorResponse(error, errorLabel) {
+    const msg = (error && error.message) || '';
+    let message = msg;
+    let hint = '';
+    if (/Request failed|ECONNREFUSED|ENOTFOUND|ECONNRESET|ETIMEDOUT|Request timeout/i.test(msg)) {
+        message = 'LLM 服务连接失败';
+        hint = '请检查 LLM_API_BASE_URL（地址/端口）与 LLM 服务是否在运行';
+    } else if (/API error|Failed to parse API response/i.test(msg)) {
+        message = 'LLM 服务返回异常';
+        hint = '请检查 API Key、模型名或 LLM 服务状态';
+    } else if (/Could not extract Mermaid/i.test(msg)) {
+        hint = '请确保输入的是流程图描述（如“用户登录流程”），而非对话内容';
+    }
+    return { error: errorLabel, message, hint };
 }
 
 // register 错误码 -> HTTP 状态与提示的映射。集中一处便于审阅与扩展。

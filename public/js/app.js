@@ -235,11 +235,13 @@ async function handleLogout() {
     state.mermaidCode = '';
     state.history = [];
     state.sessionId = null;
+    elements.inputPrompt.value = '';
     elements.codeEditor.value = '';
     if (window.mermaidRender) {
         window.mermaidRender.clear();
     }
     elements.historyList.innerHTML = '<p class="drawer-empty">暂无历史会话</p>';
+    closeDrawer();
     showLoginMask();
     updateStatus('已登出', 'ready');
     updateCodeStatus('就绪', 'ready');
@@ -248,12 +250,14 @@ async function handleLogout() {
 // ---- History drawer -------------------------------------------------------
 
 function toggleDrawer() {
-    elements.drawer.classList.toggle('open');
+    const open = elements.drawer.classList.toggle('open');
+    elements.btnToggleDrawer.classList.toggle('active', open);
 }
 
 // 收起抽屉：显式移除 open（而非 toggle），避免在已收起时误触发打开
 function closeDrawer() {
     elements.drawer.classList.remove('open');
+    elements.btnToggleDrawer.classList.remove('active');
 }
 
 async function loadSessions() {
