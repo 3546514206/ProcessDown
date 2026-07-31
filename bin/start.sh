@@ -126,6 +126,37 @@ is_running() {
     return 1
 }
 
+git_pull() {
+    # 没有 .git 目录时跳过（如仓库外裸运行）
+    if [ ! -d "$PROJECT_DIR/.git" ]; then
+        echo -e "${YELLOW}未检测到 .git 目录，跳过 git pull${NC}"
+        return 0
+    fi
+
+    echo -e "${GREEN}正在同步远程代码...${NC}"
+
+    local before after
+    before=$(git rev-parse --short HEAD 2>/dev/null)
+    if [ -z "$before" ]; then
+        echo -e "${YELLOW}无法读取当前 commit，跳过 git pull${NC}"
+        return 0
+    fi
+
+    # pull 失败（网络/合并冲突）只警告、不中断——本地代码仍可启动
+    if ! git pull --no-rebase 2>&1 | sed 's/^/  /'; then
+        echo -e "${YELLOW}⚠️  git pull 失败，将使用本地代码启动${NC}"
+        return 0
+    fi
+
+    after=$(git rev-parse --short HEAD 2>/dev/null)
+    if [ "$before" = "$after" ]; then
+        echo -e "  ${GREEN}已是最新${NC} ($before)"
+    else
+        echo -e "  ${GREEN}已更新${NC}: $before → $after"
+    fi
+    echo ""
+}
+
 do_start() {
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}   ProcessDown - AI 流程图生成器${NC}"
@@ -291,7 +322,16 @@ do_status() {
 }
 
 # 主入口
-case "${1:-}" in
+COMMAND="${1:-}"
+
+# start / restart 在执行正式逻辑前先 git pull——拿到最新代码
+case "$COMMAND" in
+    start|restart)
+        git_pull
+        ;;
+esac
+
+case "$COMMAND" in
     start)   do_start ;;
     stop)    do_stop ;;
     restart) do_restart ;;
