@@ -159,8 +159,9 @@ git_pull() {
         return 0
     fi
 
+    # 用 hash + subject 而非仅 hash——日志一眼能看清"我们在哪个版本"
     local before
-    before=$(git rev-parse --short HEAD 2>/dev/null)
+    before=$(git log -1 --pretty=format:'%h %s' 2>/dev/null)
     if [ -z "$before" ]; then
         log_event info "git pull skipped: 无法读取当前 commit"
         echo -e "${YELLOW}无法读取当前 commit，跳过 git pull${NC}"
@@ -168,7 +169,7 @@ git_pull() {
     fi
 
     echo -e "${GREEN}正在同步远程代码...${NC}"
-    log_event info "git pull start: before=$before"
+    log_event info "git pull start: local=$before"
 
     # 必须先捕获输出再用 $? 取退出码：直接 `git pull | sed ...` 的退出码
     # 来自 sed 而非 git，pull 失败会被静默吞掉。
@@ -179,23 +180,23 @@ git_pull() {
     # 把 git pull 的输出缩进回显到终端（不论成功失败都保留原文便于排查）
     echo "$pull_output" | sed 's/^/  /'
 
-    after=$(git rev-parse --short HEAD 2>/dev/null)
+    after=$(git log -1 --pretty=format:'%h %s' 2>/dev/null)
 
     if [ $pull_exit -ne 0 ]; then
         # pull 失败（网络/合并冲突）只警告、不中断——本地代码仍可启动
         local err_summary
         err_summary=$(echo "$pull_output" | tail -1)
-        log_event warn "git pull failed (exit=$pull_exit): $err_summary"
+        log_event warn "git pull failed (exit=$pull_exit): local=$before err=$err_summary"
         echo -e "${YELLOW}⚠️  git pull 失败，将使用本地代码启动${NC}"
         return 0
     fi
 
     if [ "$before" = "$after" ]; then
-        log_event info "git pull succeeded: 已是最新 ($before)"
-        echo -e "  ${GREEN}已是最新${NC} ($before)"
+        log_event info "git pull succeeded: up-to-date $before"
+        echo -e "  ${GREEN}已是最新${NC} (${before%% *})"
     else
-        log_event info "git pull succeeded: 已更新 $before → $after"
-        echo -e "  ${GREEN}已更新${NC}: $before → $after"
+        log_event info "git pull succeeded: updated '$before' -> '$after'"
+        echo -e "  ${GREEN}已更新${NC}: ${before%% *} → ${after%% *}"
     fi
     echo ""
 }
