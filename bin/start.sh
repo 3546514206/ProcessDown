@@ -126,32 +126,75 @@ is_running() {
     return 1
 }
 
+log_event() {
+    # bash 侧的日志写入助手：通过 Node logger 写入 run/processdown.log，
+    # 复用其脱敏正则与统一时间戳格式。stdout 是 TTY 时 logger 会镜像到终端。
+    local level="$1"
+    shift
+    local message="$*"
+
+    if ! command -v node &> /dev/null; then
+        # node 不在时降级为直接写文件（保留时间戳与级别，丢失脱敏能力）
+        printf '[%s] [%s] %s\n' \
+            "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "${level^^}" "$message" \
+            >> "$LOG_FILE" 2>/dev/null || true
+        return 0
+    fi
+
+    # 参数通过 process.argv 传递，避免 shell 注入
+    # 注意：(1) node -e 模式下 argv[1] 即第一个用户参数（无 [eval] 占位）
+    #       (2) 必须以方法形式 logger[method](msg) 调用——单独调用会丢失 this 绑定
+    node -e "
+        const logger = require('./src/utils/logger');
+        const method = process.argv[1];
+        if (typeof logger[method] === 'function') logger[method](process.argv[2]);
+    " "$level" "$message" 2>/dev/null || true
+}
+
 git_pull() {
     # 没有 .git 目录时跳过（如仓库外裸运行）
     if [ ! -d "$PROJECT_DIR/.git" ]; then
+        log_event info "git pull skipped: 无 .git 目录"
         echo -e "${YELLOW}未检测到 .git 目录，跳过 git pull${NC}"
         return 0
     fi
 
-    echo -e "${GREEN}正在同步远程代码...${NC}"
-
-    local before after
+    local before
     before=$(git rev-parse --short HEAD 2>/dev/null)
     if [ -z "$before" ]; then
+        log_event info "git pull skipped: 无法读取当前 commit"
         echo -e "${YELLOW}无法读取当前 commit，跳过 git pull${NC}"
         return 0
     fi
 
-    # pull 失败（网络/合并冲突）只警告、不中断——本地代码仍可启动
-    if ! git pull --no-rebase 2>&1 | sed 's/^/  /'; then
+    echo -e "${GREEN}正在同步远程代码...${NC}"
+    log_event info "git pull start: before=$before"
+
+    # 必须先捕获输出再用 $? 取退出码：直接 `git pull | sed ...` 的退出码
+    # 来自 sed 而非 git，pull 失败会被静默吞掉。
+    local pull_output pull_exit after
+    pull_output=$(git pull --no-rebase 2>&1)
+    pull_exit=$?
+
+    # 把 git pull 的输出缩进回显到终端（不论成功失败都保留原文便于排查）
+    echo "$pull_output" | sed 's/^/  /'
+
+    after=$(git rev-parse --short HEAD 2>/dev/null)
+
+    if [ $pull_exit -ne 0 ]; then
+        # pull 失败（网络/合并冲突）只警告、不中断——本地代码仍可启动
+        local err_summary
+        err_summary=$(echo "$pull_output" | tail -1)
+        log_event warn "git pull failed (exit=$pull_exit): $err_summary"
         echo -e "${YELLOW}⚠️  git pull 失败，将使用本地代码启动${NC}"
         return 0
     fi
 
-    after=$(git rev-parse --short HEAD 2>/dev/null)
     if [ "$before" = "$after" ]; then
+        log_event info "git pull succeeded: 已是最新 ($before)"
         echo -e "  ${GREEN}已是最新${NC} ($before)"
     else
+        log_event info "git pull succeeded: 已更新 $before → $after"
         echo -e "  ${GREEN}已更新${NC}: $before → $after"
     fi
     echo ""
