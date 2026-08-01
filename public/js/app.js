@@ -99,6 +99,8 @@ function clearAuth() {
     localStorage.removeItem('pd_token');
     state.user = null;
     state.sessionId = null;
+    // 登录态失效/登出时清空输入框，避免跨用户残留——这是会话切换与用户/token 切换两条入口的共同汇聚点
+    elements.inputPrompt.value = '';
 }
 
 /**
@@ -312,6 +314,8 @@ async function restoreFromHistory(sessionId) {
         showToast('生成中，请稍候', 'warning');
         return;
     }
+    // 重复点 active 项不算切换会话：不动输入框/画布，避免覆盖用户当前会话的未提交内容
+    if (state.sessionId === sessionId) return;
     try {
         const res = await apiFetch('/api/session/check', {
             method: 'POST',
@@ -324,6 +328,8 @@ async function restoreFromHistory(sessionId) {
         }
         if (data.exists) {
             state.sessionId = data.sessionId;
+            // 切换会话一律清空输入框：上一会话的 prompt 不属于当前会话，不应跨会话残留
+            elements.inputPrompt.value = '';
             if (data.lastMermaid) {
                 state.mermaidCode = data.lastMermaid;
                 elements.codeEditor.value = data.lastMermaid;
