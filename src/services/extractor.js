@@ -140,6 +140,70 @@ function validateMermaidCode(code) {
  */
 
 /**
+ * 修复 erDiagram 关系行被错误加引号的关系标签。
+ * Mermaid 的 erDiagram 解析器不支持引号包裹的关系标签，形如
+ *   Shipment ||--o{ TemperatureLog : "monitored_by"
+ *   ElectronicSignature }o..o{ Tenant : "signs (polymorphic)"
+ * 都会导致渲染失败。若标签是合法标识符（字母开头的字母数字下划线串），
+ * 去掉引号保留；否则（含空格、括号、特殊字符或为空）整段 `: "label"` 一并删掉。
+ * 非 erDiagram 整体返回原文；classDiagram 关系标签本身不带引号、其 `"1" *-- "0..*"`
+ * 中的引号是基数标记而非 label 引用，本规则不触及。
+ */
+function fixErdRelationshipLabels(code) {
+    // 整体不含 erDiagram 声明则直接放过：classDiagram / flowchart 等图类型不会被误改
+    if (!/\berDiagram\b/i.test(code)) {
+        return { fixed: false, code };
+    }
+
+    // ERD 关系行：左侧 cardinality + 实线/虚线 + 右侧 cardinality。
+    // Mermaid ERD 的六种合法 cardinality：|| (one), }o (zero-many), }| (one-many),
+    // o| (zero-one), o{ (zero-many), |{ (one-many)。
+    const ERD_RELATION_REGEX = /(\|\||\}o|\}\||o\||o\{|\|\{)[-.]+(\|\||\}o|\}\||o\||o\{|\|\{)/;
+    // 行尾带引号的 label：`: "label"` 或 `: 'label'`
+    const DOUBLE_QUOTED_LABEL = /\s*:\s*"([^"]*)"\s*$/;
+    const SINGLE_QUOTED_LABEL = /\s*:\s*'([^']*)'\s*$/;
+    // 安全 label：字母开头，后续字母/数字/下划线——这是 Mermaid 关系标签去掉引号后能正常解析的最小子集
+    const SAFE_LABEL = /^[a-zA-Z][a-zA-Z0-9_]*$/;
+
+    const lines = code.split('\n');
+    let changed = false;
+
+    const out = lines.map((line) => {
+        // 非关系行（如实体声明 `ENTITY { ... }`、注释 `%% ...`）直接跳过
+        if (!ERD_RELATION_REGEX.test(line)) return line;
+
+        let m = line.match(DOUBLE_QUOTED_LABEL);
+        if (m) {
+            const label = m[1];
+            if (SAFE_LABEL.test(label)) {
+                changed = true;
+                return line.replace(DOUBLE_QUOTED_LABEL, ' : ' + label);
+            }
+            changed = true;
+            return line.replace(DOUBLE_QUOTED_LABEL, '').replace(/\s+$/, '');
+        }
+
+        m = line.match(SINGLE_QUOTED_LABEL);
+        if (m) {
+            const label = m[1];
+            if (SAFE_LABEL.test(label)) {
+                changed = true;
+                return line.replace(SINGLE_QUOTED_LABEL, ' : ' + label);
+            }
+            changed = true;
+            return line.replace(SINGLE_QUOTED_LABEL, '').replace(/\s+$/, '');
+        }
+
+        return line;
+    });
+
+    if (!changed) {
+        return { fixed: false, code };
+    }
+    return { fixed: true, code: out.join('\n') };
+}
+
+/**
  * Fix sequenceDiagram `opt` blocks that incorrectly contain `else`.
  * Mermaid's `opt` block does not support `else` (only `alt` does). When an
  * `opt` block contains `else`, the model intended a conditional branch, so
@@ -224,6 +288,12 @@ function autoFixMermaidCode(code) {
         fixes.push('Converted opt block with else to alt');
     }
 
+    const erdLabelFix = fixErdRelationshipLabels(fixed);
+    if (erdLabelFix.fixed) {
+        fixed = erdLabelFix.code;
+        fixes.push('Stripped quoted erDiagram relationship labels');
+    }
+
     fixed = fixed.split('\n').map(line => line.trimEnd()).join('\n');
     if (fixed !== code && fixes.length === 0) {
         fixes.push('Removed trailing whitespace');
@@ -236,5 +306,6 @@ module.exports = {
     extractMermaidCode,
     isMermaidCode,
     validateMermaidCode,
-    autoFixMermaidCode
+    autoFixMermaidCode,
+    fixErdRelationshipLabels
 };
