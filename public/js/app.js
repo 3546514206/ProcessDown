@@ -188,6 +188,9 @@ async function handleLogin(event) {
         }
         setToken(data.token);
         state.user = data.username;
+        // 防御性兜底：handleLogout 等其他入口已清空输入，但切换用户（尤其是先登出再登入、或共享浏览器场景）仍可能残留上一用户的 prompt/code——这里再清一次，杜绝跨用户串味
+        elements.inputPrompt.value = '';
+        elements.codeEditor.value = '';
         hideLoginMask();
         elements.userBadge.textContent = state.user;
         elements.loginForm.reset();
@@ -218,6 +221,9 @@ async function handleRegister(event) {
         // 注册成功即签发 token，省去再登录一步
         setToken(data.token);
         state.user = data.username;
+        // 防御性兜底：注册也可能发生在 token 失效后的用户切换场景，清掉上一用户残留的 prompt/code，杜绝跨用户串味
+        elements.inputPrompt.value = '';
+        elements.codeEditor.value = '';
         hideLoginMask();
         elements.userBadge.textContent = state.user;
         elements.registerForm.reset();
@@ -314,7 +320,9 @@ async function restoreFromHistory(sessionId) {
         showToast('生成中，请稍候', 'warning');
         return;
     }
-    // 重复点 active 项不算切换会话：不动输入框/画布，避免覆盖用户当前会话的未提交内容
+    // 切换会话一律清空输入框：上一会话的 prompt 不属于当前会话，跨会话残留会误导用户；放在早返回之前，让同会话重入也保持干净画布
+    elements.inputPrompt.value = '';
+    // 重复点 active 项不算切换会话：不动 sessionId/画布，避免覆盖用户当前会话的未提交内容
     if (state.sessionId === sessionId) return;
     try {
         const res = await apiFetch('/api/session/check', {
