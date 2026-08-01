@@ -5,11 +5,10 @@
 
 const logger = require('../utils/logger');
 
-// Max request body size (1MB)
+// Max request body size (1MB) — sole length gate for prompt/mermaid/instruction.
+// 项目需要支持 5 万字符以上的提示词，prompt 字段不再单独设上限；1MB body 限制
+// 作为兜底，单条 5 万中文字符 ≈ 150KB UTF-8 远低于 1MB。
 const MAX_BODY_SIZE = 1024 * 1024;
-
-// Max prompt length (5000 chars)
-const MAX_PROMPT_LENGTH = 5000;
 
 function validatorMiddleware(req, res, next) {
     const pathname = new URL(req.url, `http://${req.headers.host}`).pathname;
@@ -76,14 +75,6 @@ function validateGenerateRequest(body) {
         errors.push('"mermaid" must be a string');
     }
 
-    if (body.prompt && body.prompt.length > MAX_PROMPT_LENGTH) {
-        errors.push(`"prompt" exceeds maximum length of ${MAX_PROMPT_LENGTH} characters`);
-    }
-
-    if (body.mermaid && body.mermaid.length > MAX_PROMPT_LENGTH) {
-        errors.push(`"mermaid" exceeds maximum length of ${MAX_PROMPT_LENGTH} characters`);
-    }
-
     return {
         valid: errors.length === 0,
         errors
@@ -92,6 +83,5 @@ function validateGenerateRequest(body) {
 
 module.exports = {
     validatorMiddleware,
-    validateGenerateRequest,
-    MAX_PROMPT_LENGTH
+    validateGenerateRequest
 };
