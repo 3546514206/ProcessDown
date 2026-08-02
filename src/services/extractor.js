@@ -235,6 +235,87 @@ function fixGitGraphCherryPick(code) {
 }
 
 /**
+ * 修复 gitGraph 头部 v10.3.0+ 的方向参数（LR / TB / RL / BT）。
+ * Mermaid vendored 3.0.9 的 gitGraph 解析器只接受 `gitGraph` 或
+ * `gitGraph: { ... }` 两种头部；LLM 看到最新文档会输出 `gitGraph LR`
+ * 等，解析器会报 "Parse error on line 1"。
+ * 策略：保留 `gitGraph` 关键字，把后续方向词去掉。
+ * 方向感是视觉偏好，丢掉的代价远小于直接渲染失败。
+ */
+function fixGitGraphOrientation(code) {
+    if (!/\bgitGraph\b/i.test(code)) {
+        return { fixed: false, code };
+    }
+
+    // 只匹配紧跟 `gitGraph` 关键字（同行末尾、可有空白）的方向词；
+    // 行首是 `gitGraph` 时方向被剥，行内别处出现 `LR` 不动（避免误伤分支名等）。
+    // 大小写不敏感；BT/RL 是合法 v10 方向，vendored 不接受。
+    const ORIENTATION = /\bgitGraph\s+(LR|TB|RL|BT)\b/i;
+    const m = code.match(ORIENTATION);
+    if (!m) {
+        return { fixed: false, code };
+    }
+    return {
+        fixed: true,
+        code: code.replace(ORIENTATION, 'gitGraph').replace(/[ \t]+$/, '')
+    };
+}
+
+/**
+ * 修复 gitGraph merge 行上 v10+ 的 merge-algorithm type 关键字
+ * （SQUASH / REBASE / FAST_FORWARD / FAST-FORWARD / NO_FF）。
+ *
+ * Mermaid v9 的 gitGraph 解析器（vendored 3.0.9）只识别
+ * `NORMAL` / `REVERSE` / `HIGHLIGHT` 三个 commit-style highlight，
+ * 不接受这些 v10+ merge algorithm 关键字；LLM 倾向按最新文档输出
+ * `merge feature/x type: SQUASH` / `type: REBASE` 之类，渲染时报
+ * "but found: 'SQUASH'"。
+ *
+ * 策略：把这些 v10+ type 段整段从 merge 行上剥掉，NORMAL 等合法值保留。
+ * 不能映射成 NORMAL（语义不匹配——NORMAL 是 highlight 不是 merge algorithm），
+ * 也不能保留（解析器不认识），所以只能丢弃。
+ *
+ * 注意：与 fixGitGraphCherryPick 不同的是，本函数限定只剥
+ * `^merge ... type: <V10_KEYWORD>` 的 v10 merge algorithm；
+ * commit 行上的 `type: HIGHLIGHT` 等合法 v9 highlight 不在处理范围。
+ */
+function fixGitGraphMergeType(code) {
+    if (!/\bgitGraph\b/i.test(code)) {
+        return { fixed: false, code };
+    }
+
+    // v10+ merge algorithm 关键字。NO_FF 在 docs 里有提到，按同样的"剥掉"处理。
+    // 大小写不敏感、underscore / hyphen 两种形式都接受。
+    const V10_MERGE_TYPES = /^(SQUASH|REBASE|FAST_FORWARD|FAST-FORWARD|NO_FF)$/i;
+
+    const lines = code.split('\n');
+    let changed = false;
+    const out = lines.map((line) => {
+        const trimmed = line.trimStart();
+        // 只处理 merge 开头的行；commit 行上的 type: HIGHLIGHT 是合法 v9 highlight
+        if (!/^merge\b/.test(trimmed)) return line;
+
+        // 匹配 `type: <keyword>`（keyword 边界为空白、行尾或引号）；
+        // 只剥离 v10 merge algorithm 关键字，NORMAL/REVERSE/HIGHLIGHT 等 v9 合法值保留。
+        // 边界用 (?=\s|$|") 避免误伤类似 `type: NORMAL_FF` 之类的非完整单词。
+        const typeMatch = trimmed.match(/\btype:\s*(\S+?)(?=\s|$|")/);
+        if (!typeMatch) return line;
+        if (!V10_MERGE_TYPES.test(typeMatch[1])) return line;
+
+        changed = true;
+        // 删掉 ` type: <keyword>` 这段子串；保留行首缩进与剩余属性。
+        // 如果 type 段恰好是行尾（trimEnd 后无内容），会留下行尾空格，
+        // 由 autoFixMermaidCode 末尾的统一 trimEnd 处理。
+        return line.replace(/\s*\btype:\s*\S+/, '').replace(/\s+$/, '');
+    });
+
+    if (!changed) {
+        return { fixed: false, code };
+    }
+    return { fixed: true, code: out.join('\n') };
+}
+
+/**
  * Fix sequenceDiagram `opt` blocks that incorrectly contain `else`.
  * Mermaid's `opt` block does not support `else` (only `alt` does). When an
  * `opt` block contains `else`, the model intended a conditional branch, so
@@ -331,6 +412,18 @@ function autoFixMermaidCode(code) {
         fixes.push('Stripped v10 cherry-pick suffix from gitGraph commit/merge');
     }
 
+    const gitGraphMergeFix = fixGitGraphMergeType(fixed);
+    if (gitGraphMergeFix.fixed) {
+        fixed = gitGraphMergeFix.code;
+        fixes.push('Stripped v10 merge type (SQUASH/REBASE/FAST_FORWARD/NO_FF) from gitGraph merge');
+    }
+
+    const gitGraphOrientFix = fixGitGraphOrientation(fixed);
+    if (gitGraphOrientFix.fixed) {
+        fixed = gitGraphOrientFix.code;
+        fixes.push('Stripped v10.3.0+ orientation (LR/TB/RL/BT) from gitGraph header');
+    }
+
     fixed = fixed.split('\n').map(line => line.trimEnd()).join('\n');
     if (fixed !== code && fixes.length === 0) {
         fixes.push('Removed trailing whitespace');
@@ -345,5 +438,7 @@ module.exports = {
     validateMermaidCode,
     autoFixMermaidCode,
     fixErdRelationshipLabels,
-    fixGitGraphCherryPick
+    fixGitGraphCherryPick,
+    fixGitGraphMergeType,
+    fixGitGraphOrientation
 };

@@ -57,6 +57,24 @@ const mermaidRender = {
                 commonHints.push('Tip: There may be special characters (emoji, Chinese punctuation) confusing the parser. Check the code editor for issues.');
             }
 
+            // gitGraph 专属错误诊断：仅当当前代码确实含 `gitGraph` 头部时提示，
+            // 避免误把其他图的报错归到 gitGraph。
+            if (/\bgitGraph\b/i.test(code)) {
+                // v10+ merge algorithm 关键字：SQUASH / REBASE / FAST_FORWARD(-)/ NO_FF
+                // 错误信息通常包含出错的源行片段，匹配 `type: <keyword>` 形态足够精确。
+                if (/\btype:\s*(SQUASH|REBASE|FAST_FORWARD|FAST-FORWARD|NO_FF)\b/i.test(error.message)) {
+                    commonHints.push('gitGraph merge 行上的 type 关键字 (SQUASH/REBASE/FAST_FORWARD/NO_FF) 是 Mermaid v10+ 特性，本项目 vendored 解析器不支持。直接把 `merge ... type: <keyword>` 段删掉即可，例如 `merge feature/x type: SQUASH tag: "v1"` 改成 `merge feature/x tag: "v1"`。');
+                }
+                // v10+ cherry-pick 语法 &<branch>：错误信息里常含 `&<branch>` 字面
+                if (/&[A-Za-z0-9_./-]+/.test(error.message)) {
+                    commonHints.push('gitGraph 检测到 v10+ cherry-pick 语法 `&<branch>`，本项目不支持。把 commit/merge 行尾的 `&分支名` 整段删掉即可，例如 `commit id: "a" &feature/x` 改成 `commit id: "a"`。');
+                }
+                // gitGraph 头部方向 LR/TB/RL/BT：line 1 parse error 且头部确实带方向
+                if (/Parse error on line 1/i.test(error.message) && /\bgitGraph\s+(LR|TB|RL|BT)\b/i.test(code)) {
+                    commonHints.push('gitGraph 头部方向关键字（LR / TB / RL / BT）是 Mermaid v10.3.0+ 特性，本项目 vendored 解析器不接受。改成裸 `gitGraph` 即可（默认方向已够用）。');
+                }
+            }
+
             const hintsHtml = commonHints.length > 0
                 ? `<div class="error-hints">${commonHints.map(h => `<p>${h}</p>`).join('')}</div>`
                 : '';

@@ -47,11 +47,13 @@
 8. **requirementDiagram** - 需求图
 
 9. **gitGraph** - Git 图
-   - 基础语法：`commit [id: "..."] [msg: "..."] [tag: "..."] [type: ...]`、`branch <name>`、`checkout <name>`、`merge <branch> [type: ...] [tag: "..."] [msg: "..."]`
-   - **严格禁止 v10+ cherry-pick 语法 `&<branch>`**：Mermaid v10 才支持 `commit &<branch>` / `merge &<branch>`，本项目限定 v9+ 兼容，必须省略
-   - **禁止冗余的 `merge <branch> ... &<branch>` 写法**：分支名只写一次，写两遍既不合规也易触发解析错误
-   - merge 类型枚举：`NORMAL`（默认）、`SQUASH`、`FAST_FORWARD`、`NO_FF`——只写这些，不要自造
-   - 中文 commit/branch/tag 名必须 ASCII 标识符包裹在引号里：`msg: "feat: 实现JWT登录接口"`
+   - 头部只能是 `gitGraph`，**禁止追加方向**（如 `gitGraph LR` / `gitGraph TB`）——方向是 v10.3.0+ 特性，本项目 vendored 解析器不接受
+   - 关键字：`commit [id: "..."] [msg: "..."] [tag: "..."] [type: ...]`、`branch <name>`、`checkout <name>`、`merge <branch> [tag: "..."] [msg: "..."]`
+   - **type 只能用于 commit 行（commit-style highlight）**，合法值：`NORMAL`（默认）、`REVERSE`、`HIGHLIGHT`
+   - **禁止在 merge 行上写 `type: ...`**——vendored 解析器对 merge 不识别 type 字段；任何 `merge ... type: SQUASH/REBASE/FAST_FORWARD/NO_FF` 都会解析失败
+   - **严格禁止 v10+ cherry-pick 语法 `&<branch>`**：本项目 vendored 解析器不接受 `commit &<branch>` / `merge &<branch>`，整段 `&branch` 后缀必须省略（分支名已写在 `merge <branch>` 关键字后）
+   - options 块支持：`mainBranchName: <name>`、`showBranches: true|false`、`showCommitLabel: true|false`、`parallelCommits: true|false`——但不要写 `branchOrder` 之外的实验选项
+   - 中文 commit/branch/tag 名必须 ASCII 标识符包裹在引号里：`msg: "feat: 实现JWT登录接口"`、`tag: "v1.0.0"`
 
 10. **journey** - 用户旅程图
 
