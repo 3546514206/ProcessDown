@@ -204,6 +204,37 @@ function fixErdRelationshipLabels(code) {
 }
 
 /**
+ * 修复 gitGraph 中错误使用 v10+ cherry-pick 语法 `&<branch>` 后缀。
+ * Mermaid v9 的 gitGraph 不支持 `commit &<branch>` / `merge &<branch>`，
+ * LLM 输出常出现 `merge feature/user-auth ... &feature/user-auth` 这种冗余写法
+ * 或单独的 `commit ... &feature/order-refactor`，渲染会失败。
+ * 处理：去掉行尾的 `&<branch>` 后缀；若去掉后整行只剩 merge/commit 关键字 + 分支名
+ * （即原本是 `merge &<branch>` 形式），保留原 merge/commit 结构作为无 cherry-pick 版本。
+ */
+function fixGitGraphCherryPick(code) {
+    if (!/\bgitGraph\b/i.test(code)) {
+        return { fixed: false, code };
+    }
+
+    const CHERRY_PICK_SUFFIX = /\s+&[A-Za-z0-9_./-]+\s*$/;
+    const lines = code.split('\n');
+    let changed = false;
+    const out = lines.map((line) => {
+        const trimmed = line.trimStart();
+        // 只处理 commit / merge 开头的行
+        if (!/^(commit|merge)\b/.test(trimmed)) return line;
+        if (!CHERRY_PICK_SUFFIX.test(line)) return line;
+        changed = true;
+        return line.replace(CHERRY_PICK_SUFFIX, '').replace(/\s+$/, '');
+    });
+
+    if (!changed) {
+        return { fixed: false, code };
+    }
+    return { fixed: true, code: out.join('\n') };
+}
+
+/**
  * Fix sequenceDiagram `opt` blocks that incorrectly contain `else`.
  * Mermaid's `opt` block does not support `else` (only `alt` does). When an
  * `opt` block contains `else`, the model intended a conditional branch, so
@@ -294,6 +325,12 @@ function autoFixMermaidCode(code) {
         fixes.push('Stripped quoted erDiagram relationship labels');
     }
 
+    const gitGraphFix = fixGitGraphCherryPick(fixed);
+    if (gitGraphFix.fixed) {
+        fixed = gitGraphFix.code;
+        fixes.push('Stripped v10 cherry-pick suffix from gitGraph commit/merge');
+    }
+
     fixed = fixed.split('\n').map(line => line.trimEnd()).join('\n');
     if (fixed !== code && fixes.length === 0) {
         fixes.push('Removed trailing whitespace');
@@ -307,5 +344,6 @@ module.exports = {
     isMermaidCode,
     validateMermaidCode,
     autoFixMermaidCode,
-    fixErdRelationshipLabels
+    fixErdRelationshipLabels,
+    fixGitGraphCherryPick
 };

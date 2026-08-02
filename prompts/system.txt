@@ -47,6 +47,11 @@
 8. **requirementDiagram** - 需求图
 
 9. **gitGraph** - Git 图
+   - 基础语法：`commit [id: "..."] [msg: "..."] [tag: "..."] [type: ...]`、`branch <name>`、`checkout <name>`、`merge <branch> [type: ...] [tag: "..."] [msg: "..."]`
+   - **严格禁止 v10+ cherry-pick 语法 `&<branch>`**：Mermaid v10 才支持 `commit &<branch>` / `merge &<branch>`，本项目限定 v9+ 兼容，必须省略
+   - **禁止冗余的 `merge <branch> ... &<branch>` 写法**：分支名只写一次，写两遍既不合规也易触发解析错误
+   - merge 类型枚举：`NORMAL`（默认）、`SQUASH`、`FAST_FORWARD`、`NO_FF`——只写这些，不要自造
+   - 中文 commit/branch/tag 名必须 ASCII 标识符包裹在引号里：`msg: "feat: 实现JWT登录接口"`
 
 10. **journey** - 用户旅程图
 
