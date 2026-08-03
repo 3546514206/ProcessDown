@@ -20,12 +20,14 @@ const components = {
     init() {
         this.previewContent = document.getElementById('preview-content');
         this.previewArea = document.getElementById('preview-area');
+        this.previewPanel = document.getElementById('panel-right');
         this.theme = localStorage.getItem('theme') || 'dark';
 
         this.initZoomControls();
         this.initPanControls();
         this.initBackgroundControls();
         this.initFullscreenControl();
+        this.initPreviewFullscreenControl();
         this.initPanelResizer();
         this.initKeyboardShortcuts();
 
@@ -211,6 +213,30 @@ const components = {
         if (!document.fullscreenElement) {
             document.documentElement.requestFullscreen().catch(err => {
                 console.log('Fullscreen error:', err);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    },
+
+    // Preview panel fullscreen (与上方整页全屏正交：只全屏右面板，隐藏输入面板/header/status bar)
+    initPreviewFullscreenControl() {
+        const btn = document.getElementById('btn-preview-fullscreen');
+        if (!btn) return;
+
+        btn.addEventListener('click', () => this.togglePreviewFullscreen());
+
+        // 同步 active 态：浏览器原生 Esc 退出全屏不经过 click，不监听则按钮
+        // 仍显 active，误导用户以为还在预览全屏。
+        document.addEventListener('fullscreenchange', () => {
+            btn.classList.toggle('active', document.fullscreenElement === this.previewPanel);
+        });
+    },
+
+    togglePreviewFullscreen() {
+        if (document.fullscreenElement !== this.previewPanel) {
+            this.previewPanel.requestFullscreen().catch(err => {
+                console.log('Preview fullscreen error:', err);
             });
         } else {
             document.exitFullscreen();

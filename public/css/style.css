@@ -169,6 +169,7 @@ body {
     flex-wrap: wrap;
 }
 
+.view-controls,
 .zoom-controls,
 .bg-controls,
 .export-controls {
@@ -311,6 +312,15 @@ body {
 
 .preview-area:active {
     cursor: grabbing;
+}
+
+/* 预览面板全屏：#panel-right 进入 top layer 后脱离 .app-main 的 flex 布局，
+   需显式撑满视口；panel-header 置顶、preview-area 撑满剩余空间，
+   现有 zoom/pan/wheel 交互天然仍生效。 */
+#panel-right:fullscreen {
+    width: 100vw;
+    height: 100vh;
+    background: var(--bg-primary);
 }
 
 .preview-content {
