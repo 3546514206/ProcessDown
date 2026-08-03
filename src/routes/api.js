@@ -14,6 +14,7 @@ const ExportService = require('../services/export');
 const { SessionStore } = require('../services/sessionStore');
 const { UserStore } = require('../services/userStore');
 const { validateGenerateRequest } = require('../middleware/validator');
+const { extractMermaidCode, autoFixMermaidCode } = require('../services/extractor');
 
 function createRouter(config) {
     const generator = new GeneratorService(config);
@@ -228,6 +229,20 @@ function createRouter(config) {
                         lastMermaid = history[i].content;
                         break;
                     }
+                }
+            }
+
+            // 历史会话里的 assistant content 是当时净化逻辑处理后的产物；净化逻辑
+            // 后续增强（如 fixGitGraphOrientation、frontmatter 剥离）后，旧历史里
+            // 残留的不兼容写法（gitGraph LR:、带 frontmatter 等）会让前端
+            // mermaid.render 失败。返回前用最新 extractor 再跑一遍 extract+autoFix，
+            // 与 generate 链路保持单一真源。不写盘--checkSession 仍是只读语义，
+            // 只净化返回值。extract 对非 mermaid 内容返回 null 时保留原文，避免丢数据
+            // （前端会显示渲染错误，便于诊断，行为与修复前一致）。
+            if (lastMermaid) {
+                const extracted = extractMermaidCode(lastMermaid);
+                if (extracted) {
+                    lastMermaid = autoFixMermaidCode(extracted).code;
                 }
             }
 

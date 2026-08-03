@@ -23,7 +23,7 @@ function extractMermaidCode(text) {
     // Try to find code block with mermaid language tag
     let match = text.match(/```mermaid\s*([\s\S]*?)```/i);
     if (match) {
-        return match[1].trim();
+        return stripFrontmatter(match[1].trim());
     }
 
     // Try to find code block without language tag
@@ -32,23 +32,42 @@ function extractMermaidCode(text) {
         const code = match[1].trim();
         // Verify it looks like Mermaid code
         if (isMermaidCode(code)) {
-            return code;
+            return stripFrontmatter(code);
         }
     }
 
     // If no code block found, check if the whole text is Mermaid code
     if (isMermaidCode(text.trim())) {
-        return text.trim();
+        return stripFrontmatter(text.trim());
     }
 
     // Try to find flowchart/sequenceDiagram keywords
     match = text.match(/(flowchart\s+[^\n]+|sequenceDiagram\s+[\s\S]*?|stateDiagram-v2\s+[\s\S]*?|classDiagram\s+[\s\S]*?|erDiagram\s+[\s\S]*?|gantt\s+[\s\S]*?|pie\s+[\s\S]*?|requirementDiagram\s+[\s\S]*?|gitGraph\s+[\s\S]*?|journey\s+[\s\S]*?)/i);
     if (match) {
-        return text.trim();
+        return stripFrontmatter(text.trim());
     }
 
     logger.warn('Could not extract Mermaid code from response');
     return null;
+}
+
+/**
+ * 剥离 Mermaid frontmatter（图表开头的 `---\n...\n---\n` YAML 配置块）。
+ *
+ * 本项目 vendored 的 mermaid（public/vendor/mermaid.min.js）不支持 frontmatter
+ * （源码 grep frontmatter=0），但 LLM 偶尔按最新文档输出带 frontmatter 的
+ * gitGraph 等，导致 mermaid.render 失败。在 extractMermaidCode 各返回点剥离，
+ * 同时闭合 generate 与 checkSession 恢复两条路径（两者都跑 extract）。
+ *
+ * 注意：未来若升级 mermaid 到支持 frontmatter 的版本，此剥离会丢失 config
+ * 配置，届时需移除此函数或改为按版本条件剥离。
+ */
+function stripFrontmatter(code) {
+    if (!code) return code;
+    // frontmatter 必须在图表最开头：首行 `---` + YAML 内容 + 闭合 `---` 行。
+    // 用 ^ 锚定首行，避免误伤图表正文里出现的 `---`（如 sequenceDiagram 注释）。
+    // [ \t]* 容忍行尾空格；\r?\n 兼容 CRLF；[\s\S]*? 非贪婪到第一个闭合 ---。
+    return code.replace(/^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/, '').trim();
 }
 
 /**
@@ -250,7 +269,10 @@ function fixGitGraphOrientation(code) {
     // 只匹配紧跟 `gitGraph` 关键字（同行末尾、可有空白）的方向词；
     // 行首是 `gitGraph` 时方向被剥，行内别处出现 `LR` 不动（避免误伤分支名等）。
     // 大小写不敏感；BT/RL 是合法 v10 方向，vendored 不接受。
-    const ORIENTATION = /\bgitGraph\s+(LR|TB|RL|BT)\b/i;
+    // 方向词后若紧跟冒号（`gitGraph LR:`）一并剥掉：vendored 只接受 bare `gitGraph`
+    // 或 `gitGraph: { ... }`，`gitGraph:` 后换行会解析失败。[ \t]* 不含换行，避免
+    // 吃掉方向词后的换行与缩进而破坏代码结构。
+    const ORIENTATION = /\bgitGraph\s+(LR|TB|RL|BT)\b[ \t]*:?/i;
     const m = code.match(ORIENTATION);
     if (!m) {
         return { fixed: false, code };
@@ -437,6 +459,7 @@ module.exports = {
     isMermaidCode,
     validateMermaidCode,
     autoFixMermaidCode,
+    stripFrontmatter,
     fixErdRelationshipLabels,
     fixGitGraphCherryPick,
     fixGitGraphMergeType,
