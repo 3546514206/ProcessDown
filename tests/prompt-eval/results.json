@@ -1,0 +1,434 @@
+{
+  "accuracy": 0,
+  "correct": 0,
+  "total": 48,
+  "results": [
+    {
+      "id": "01",
+      "prompt": "用户注册流程：填写信息、验证邮箱、设置密码、发送欢迎邮件",
+      "expected": "flowchart",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "02",
+      "prompt": "用户登录时前端应用、后端服务、数据库三方之间的交互消息顺序",
+      "expected": "sequenceDiagram",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "03",
+      "prompt": "订单从创建到完成的状态变化：待支付、已支付、已发货、已签收、已完成，以及取消和退款的流转",
+      "expected": "stateDiagram-v2",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "04",
+      "prompt": "系统中的领域类 User、Order、Product、Payment，它们的属性与继承、关联关系",
+      "expected": "classDiagram",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "05",
+      "prompt": "数据库设计：users、orders、products、order_items 四张表的字段与外键关系",
+      "expected": "erDiagram",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "06",
+      "prompt": "两周项目进度：需求调研3天、设计5天、开发8天、测试4天，开发依赖设计、测试依赖开发",
+      "expected": "gantt",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "07",
+      "prompt": "公司各部门年度预算占比：研发40%、市场25%、运营20%、行政15%",
+      "expected": "pie",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "08",
+      "prompt": "团队在 feature 分支开发并合并回 main 的 Git 提交历史",
+      "expected": "gitGraph",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "09",
+      "prompt": "用户网购旅程：浏览、搜索、加购、下单、支付、收货，各环节情绪满意度评分",
+      "expected": "journey",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "10",
+      "prompt": "四个技术方案在实现成本和性能收益两个维度的定位对比",
+      "expected": "quadrantChart",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "11",
+      "prompt": "围绕人工智能这一中心概念发散：机器学习、深度学习、NLP、CV 各自的子方向",
+      "expected": "mindmap",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "12",
+      "prompt": "公司发展大事记：2018成立、2020 A轮融资、2022出海、2024上市",
+      "expected": "timeline",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "13",
+      "prompt": "能源从生产到消费的流向：煤电、风电、光伏汇入电网，再分配到工业、商业、居民，带数值",
+      "expected": "sankey",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "14",
+      "prompt": "系统需求的层级分解：顶层需求与功能需求、性能需求、接口需求之间的追踪关系",
+      "expected": "requirementDiagram",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "15",
+      "prompt": "电商系统的软件架构：外部用户、网关、用户服务、订单服务、支付服务、数据库之间的部署与调用",
+      "expected": [
+        "C4",
+        "architecture"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "16",
+      "prompt": "线上延迟升高的根因分析：从人、机、料、法、环五个维度排查可能原因",
+      "expected": "ishikawa",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "17",
+      "prompt": "团队技能集合：前端组、后端组、运维组各自掌握的技能，以及全栈成员的重叠技能",
+      "expected": "venn",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "18",
+      "prompt": "请假审批流程：员工提交、主管审批、HR审核、归档",
+      "expected": "flowchart",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "19",
+      "prompt": "支付接口被调用时的完整请求响应顺序，包含鉴权、扣款、回调通知",
+      "expected": "sequenceDiagram",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "20",
+      "prompt": "交通灯的状态循环：红灯、绿灯、黄灯之间的切换与按钮触发的行人通行",
+      "expected": "stateDiagram-v2",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "21",
+      "prompt": "把这本书的章节结构可视化出来",
+      "expected": [
+        "mindmap",
+        "treeView"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "22",
+      "prompt": "A 服务调用 B，B 再调用 C 和 D 的调用链路",
+      "expected": [
+        "sequenceDiagram",
+        "flowchart"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "23",
+      "prompt": "这个季度每月收入的变化趋势",
+      "expected": "xychart",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "24",
+      "prompt": "三个团队各自的技术栈和他们共同使用的工具",
+      "expected": "venn",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "25",
+      "prompt": "公司组织架构：CEO 之下三个 VP，各 VP 带若干总监，总监带团队",
+      "expected": [
+        "mindmap",
+        "flowchart"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "26",
+      "prompt": "系统需求到各子模块的满足与验证关系",
+      "expected": "requirementDiagram",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "27",
+      "prompt": "服务器、数据库、缓存、消息队列之间的部署拓扑与数据流向",
+      "expected": [
+        "C4",
+        "architecture"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "28",
+      "prompt": "代码库的分支演进历史，几次关键合并和发布",
+      "expected": "gitGraph",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "29",
+      "prompt": "用户从打开 app 到完成下单的完整体验，各环节的感受好坏",
+      "expected": "journey",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "30",
+      "prompt": "本月各类支出占比情况",
+      "expected": "pie",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "31",
+      "prompt": "微服务部署：网关、用户服务、订单服务、支付服务、MySQL、Redis、Kafka 的物理部署与依赖关系",
+      "expected": [
+        "architecture",
+        "C4"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "32",
+      "prompt": "数据从日志采集、清洗、存储到分析展示的流转量，带具体数值",
+      "expected": "sankey",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "33",
+      "prompt": "动物分类体系：界、门、纲、目、科、属、种的层级划分",
+      "expected": [
+        "mindmap",
+        "classDiagram"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "34",
+      "prompt": "产品从引入期、成长期、成熟期到衰退期的演进过程",
+      "expected": [
+        "timeline",
+        "stateDiagram-v2"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "35",
+      "prompt": "在线教育系统的静态结构：Course、Student、Teacher、Enrollment 类及其属性与关系",
+      "expected": "classDiagram",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "36",
+      "prompt": "各国 GDP 近五年的变化对比",
+      "expected": "xychart",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "37",
+      "prompt": "把用户从注册到流失的完整路径画出来，标注各阶段转化率",
+      "expected": [
+        "journey",
+        "flowchart"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "38",
+      "prompt": "5 个微服务两两之间的调用依赖关系",
+      "expected": [
+        "flowchart",
+        "architecture"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "39",
+      "prompt": "这个月每天的服务器 CPU 使用率波动情况",
+      "expected": "xychart",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "40",
+      "prompt": "产品需求文档里的需求条目和它们之间的追溯关系",
+      "expected": "requirementDiagram",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "41",
+      "prompt": "画一下我对这个问题拆解的思考脉络",
+      "expected": "mindmap",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "42",
+      "prompt": "对比新旧两个系统的功能差异和重叠部分",
+      "expected": "venn",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "43",
+      "prompt": "项目里程碑和各阶段的时间安排",
+      "expected": [
+        "gantt",
+        "timeline"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "44",
+      "prompt": "订单在各状态间的流转和触发条件",
+      "expected": "stateDiagram-v2",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "45",
+      "prompt": "用户在电商的购物路径：浏览、加购、下单、支付、收货",
+      "expected": [
+        "journey",
+        "flowchart"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "46",
+      "prompt": "用户和订单的关系图",
+      "expected": [
+        "erDiagram",
+        "classDiagram"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "47",
+      "prompt": "四个方案在性能、成本、安全、易用四个维度的对比",
+      "expected": "radar-beta",
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    },
+    {
+      "id": "48",
+      "prompt": "电商系统的组件分解：前端、后端各模块、数据库，以及它们之间的交互",
+      "expected": [
+        "C4Component",
+        "C4Dynamic",
+        "C4Container"
+      ],
+      "got": "error:已达到 Token Plan 用量上限：请升级 Token Plan 套餐或购买积分补充用量。 (2",
+      "match": false,
+      "head": ""
+    }
+  ]
+}
