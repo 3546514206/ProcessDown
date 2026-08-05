@@ -5,10 +5,13 @@
  *
  * Bug 背景：历史会话恢复后图表无法渲染。根因是 checkSession 返回的
  * lastMermaid（最后一条 assistant content）未经净化，老数据里残留的
- * `gitGraph LR:`、frontmatter 等当前 vendored mermaid 不接受的语法会让
+ * `gitGraph LR:` 等当前 vendored mermaid 不接受的语法会让
  * 前端 mermaid.render 抛错。开发已修：checkSession 返回前对 lastMermaid
  * 跑一遍 extractMermaidCode + autoFixMermaidCode，与 generate 链路保持单一
  * 净化真源；extract 返回 null（非 mermaid 内容）时保留原文，避免丢数据。
+ *
+ * 注（11.16.1）：frontmatter 不再剥离--bundle 已原生支持（processFrontmatter）。
+ * 下方 frontmatter 用例已改为断言"保留 frontmatter"。
  *
  * 本文件通过真实 createRouter dispatch checkSession，用 mock SessionStore
  * 植入特定 history，验证返回的 lastMermaid 已被净化。与
@@ -112,10 +115,10 @@ describe('POST /api/session/check - lastMermaid sanitization', () => {
         assert.strictEqual(body.lastMermaid, 'gitGraph\n    commit id: "init"');
     });
 
-    it('strips frontmatter from the last assistant content', () => {
-        // 老数据里 LLM 按最新文档输出了带 frontmatter（--- YAML ---）的
-        // gitGraph，vendored mermaid 不支持 frontmatter（源码 frontmatter=0），
-        // 渲染失败。checkSession 返回前必须剥掉 frontmatter 块。
+    it('preserves frontmatter in the last assistant content (bundle supports it)', () => {
+        // 11.16.1 bundle 原生支持 frontmatter（processFrontmatter + js-yaml），
+        // extractMermaidCode 不再剥离。checkSession 返回的 lastMermaid 保留
+        // frontmatter 块，让前端 mermaid.render 自行解析 title 与 config。
         const raw = '---\nconfig:\n  theme: base\n---\ngitGraph\n    commit id: "init"';
         seedStore.append(ID, '画一个 git 提交图', raw);
 
@@ -125,7 +128,7 @@ describe('POST /api/session/check - lastMermaid sanitization', () => {
         assert.strictEqual(res.statusCode, 200);
         const body = JSON.parse(res.body);
         assert.strictEqual(body.exists, true);
-        assert.strictEqual(body.lastMermaid, 'gitGraph\n    commit id: "init"');
+        assert.strictEqual(body.lastMermaid, raw);
     });
 
     it('returns lastMermaid=null when history has no assistant entry', () => {
@@ -179,10 +182,9 @@ describe('POST /api/session/check - lastMermaid sanitization', () => {
         assert.strictEqual(body.lastMermaid, clean);
     });
 
-    it('fixes combined frontmatter + gitGraph LR in one pass (realistic old-data case)', () => {
-        // 真实老数据常同时带两个问题：frontmatter + gitGraph LR 方向词。
-        // extract 先剥 frontmatter，autoFix 再剥方向词，两步在一次 checkSession
-        // 返回中完成。这是 bug 报告里最贴近实际的复合场景。
+    it('fixes gitGraph LR with frontmatter in one pass (frontmatter preserved, orientation stripped)', () => {
+        // 真实老数据常同时带 frontmatter + gitGraph LR 方向词。extract 保留
+        // frontmatter，autoFix 只剥方向词，两步在一次 checkSession 返回中完成。
         const raw = '---\nconfig\n---\ngitGraph LR\n    commit';
         seedStore.append(ID, '画一个 git 提交图', raw);
 
@@ -191,7 +193,7 @@ describe('POST /api/session/check - lastMermaid sanitization', () => {
 
         assert.strictEqual(res.statusCode, 200);
         const body = JSON.parse(res.body);
-        assert.strictEqual(body.lastMermaid, 'gitGraph\n    commit');
+        assert.strictEqual(body.lastMermaid, '---\nconfig\n---\ngitGraph\n    commit');
     });
 
     it('does NOT write the purified value back to history.json (read-only contract)', () => {

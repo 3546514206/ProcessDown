@@ -49,7 +49,7 @@ const HAPPY_PATHS = [
     { name: 'fishbone', code: 'fishbone\n问题(质量)\n人力{ 原因 }' },
     { name: 'wardley', code: 'wardley\ntitle 战略\naxis 演化 --> 价值\nCRM[0.7, 0.3]' },
     { name: 'treeView-beta', code: 'treeView-beta\n"Root"\n  "Child"' },
-    { name: 'zenuml', code: 'zenuml\nAlice.service()\nBob.handler()' },
+    // zenuml 不在 vendored bundle，已从 extractor 移除，不列入 HAPPY_PATHS
     { name: 'swimlanes', code: 'swimlanes\nlane 用户\n  点按钮' },
     { name: 'eventmodeling', code: 'eventmodeling\nslice 注册\nevent UserRegistered' }
 ];
@@ -77,8 +77,9 @@ test('v11 关键字 - extractMermaidCode 从裸文本中识别新图关键字', 
         const llmOutput = '以下是图表：\n' + code + '\n';
         const result = extractMermaidCode(llmOutput);
         // 注：extractMermaidCode 的关键字 fallback 路径（extractor.js:45）匹配到关键字后
-        // 直接返回 stripFrontmatter(text.trim())，不剥掉关键字前的"以下是图表："。
-        // 这是 v9 时代遗留行为，DESIGN 没要求改；测试只验证"含关键字 + 不为 null"。
+        // 直接返回 text.trim()（不再剥离 frontmatter--bundle 11.16.1 已原生支持），
+        // 不剥掉关键字前的"以下是图表："。这是 v9 时代遗留行为，DESIGN 没要求改；
+        // 测试只验证"含关键字 + 不为 null"。
         assert.ok(result, `extractMermaidCode 应识别 ${name}，实际 null`);
         assert.ok(result.includes(name.replace(/[.+*?^${}()|[\]\\]/g, '\\$&')),
             `提取结果应含 ${name} 关键字，实际: ${result.split('\n').slice(0, 2).join(' | ')}`);
@@ -100,6 +101,14 @@ test('isMermaidCode 对非 mermaid 文本返回 false', () => {
         assert.equal(isMermaidCode(t), false,
             `isMermaidCode("${String(t).slice(0, 30)}") 应为 false`);
     }
+});
+
+test('zenuml 不在 vendored bundle，isMermaidCode 拒绝（避免提取通过->渲染失败陷阱）', () => {
+    // zenuml 已从 isMermaidCode / extractMermaidCode / system.txt 三处移除：
+    // bundle 内无 zenuml detector（grep=0），detectType 抛 UnknownDiagramError。
+    // 若 isMermaidCode 接受 zenuml，extractMermaidCode 会返回代码 -> 前端渲染失败。
+    assert.equal(isMermaidCode('zenuml\n  Alice -> Bob: Hi'), false,
+        'zenuml 不在 vendored bundle，isMermaidCode 应拒绝');
 });
 
 test('v11 关键字子串匹配（isMermaidCode 不依赖完整行）', () => {
@@ -138,11 +147,33 @@ test('C4 严格匹配 5 个关键字，避免与变量名 "c4" 误伤', () => {
     assert.equal(isMermaidCode('C4Deployment\n  Person'), true);
 });
 
-test('beta 后缀图（cynefin-beta 等）必须保留 -beta', () => {
-    // 不带 -beta 的旧写法应不被识别为 v11 beta 图
-    // （这意味着 LLM 必须输出 cynefin-beta 而非 cynefin）
+test('stabilized 图（sankey/xychart/block/packet）bare 与 -beta 均识别', () => {
+    // 11.16.1 已 stabilize：bare 关键字合法，isMermaidCode 必须接受。
+    // 这是用户报告 sankey 渲染失败的根因--LLM 输出 bare `sankey` 被误判为非 mermaid。
+    assert.equal(isMermaidCode('sankey\n  A,B,10'), true,
+        'sankey bare（无 -beta）是合法 v11 图，应被 isMermaidCode 接受');
+    assert.equal(isMermaidCode('xychart\n  title "S"\n  bar [1,2]'), true,
+        'xychart bare 应被接受');
+    assert.equal(isMermaidCode('block\n  columns 3\n  A'), true,
+        'block bare 应被接受');
+    assert.equal(isMermaidCode('packet\n  0-10: "H"'), true,
+        'packet bare 应被接受');
+    // -beta 形式仍接受（向后兼容）
+    assert.equal(isMermaidCode('sankey-beta\n  A,B,10'), true);
+    assert.equal(isMermaidCode('block-beta\n  columns 3'), true);
+});
+
+test('仍强制 -beta 的图（cynefin/architecture/radar/venn/treeView）bare 不识别', () => {
+    // 这些图 11.16.1 仍要求 -beta 后缀，bare 形式 bundle 实测 FAIL，
+    // isMermaidCode 必须拒绝 bare 写法（LLM 必须输出带 -beta 的关键字）。
     assert.equal(isMermaidCode('cynefin\n  complex'), false,
         'cynefin 关键字（无 -beta）不是合法 v11 图，应被 isMermaidCode 拒绝');
-    assert.equal(isMermaidCode('sankey\n  A,B,10'), false,
-        'sankey 关键字（无 -beta）不是合法 v11 图');
+    assert.equal(isMermaidCode('architecture\n  direction LR'), false,
+        'architecture bare 应被拒绝（仍需 -beta）');
+    assert.equal(isMermaidCode('radar\n  axis a,b,c'), false,
+        'radar bare 应被拒绝（仍需 -beta）');
+    assert.equal(isMermaidCode('venn\n  set A'), false,
+        'venn bare 应被拒绝（仍需 -beta）');
+    assert.equal(isMermaidCode('treeView\n  "Root"'), false,
+        'treeView bare 应被拒绝（仍需 -beta）');
 });

@@ -23,7 +23,7 @@ function extractMermaidCode(text) {
     // Try to find code block with mermaid language tag
     let match = text.match(/```mermaid\s*([\s\S]*?)```/i);
     if (match) {
-        return stripFrontmatter(match[1].trim());
+        return match[1].trim();
     }
 
     // Try to find code block without language tag
@@ -32,21 +32,23 @@ function extractMermaidCode(text) {
         const code = match[1].trim();
         // Verify it looks like Mermaid code
         if (isMermaidCode(code)) {
-            return stripFrontmatter(code);
+            return code;
         }
     }
 
     // If no code block found, check if the whole text is Mermaid code
     if (isMermaidCode(text.trim())) {
-        return stripFrontmatter(text.trim());
+        return text.trim();
     }
 
     // Try to find flowchart/sequenceDiagram/etc. keywords (covers all v9-v11 supported diagrams)
     // 关键字清单与 isMermaidCode 模式保持一致（CLAUDE.md 硬约束"三处同步"），
-    // 注意 cynefin-beta 比 cynefin 长，必须先放长关键字再放短关键字以免被短前缀截断
-    match = text.match(/(flowchart\s+[^\n]+|sequenceDiagram\s+[\s\S]*?|stateDiagram-v2\s+[\s\S]*?|classDiagram\s+[\s\S]*?|erDiagram\s+[\s\S]*?|gantt\s+[\s\S]*?|pie\s+[\s\S]*?|requirementDiagram\s+[\s\S]*?|gitGraph\s+[\s\S]*?|journey\s+[\s\S]*?|quadrantChart\s+[\s\S]*?|(?:C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)\s+[\s\S]*?|mindmap\s+[\s\S]*?|timeline\s+[\s\S]*?|sankey-beta\s+[\s\S]*?|xychart-beta\s+[\s\S]*?|block-beta\s+[\s\S]*?|packet-beta\s+[\s\S]*?|kanban\s+[\s\S]*?|architecture-beta\s+[\s\S]*?|radar-beta\s+[\s\S]*?|treemap\s+[\s\S]*?|venn-beta\s+[\s\S]*?|(?:ishikawa|fishbone)\s+[\s\S]*?|wardley\s+[\s\S]*?|treeView-beta\s+[\s\S]*?|cynefin-beta\s+[\s\S]*?|zenuml\s+[\s\S]*?|swimlanes\s+[\s\S]*?|eventmodeling\s+[\s\S]*?)/i);
+    // 注意 cynefin-beta 比 cynefin 长，必须先放长关键字再放短关键字以免被短前缀截断。
+    // sankey/xychart/block/packet 在 11.16.1 已 stabilize：bare 与 -beta 均合法，
+    // 用 (?:-beta)? 同时接受两种写法。architecture/radar/venn/treeView/cynefin 仍强制 -beta。
+    match = text.match(/(flowchart\s+[^\n]+|sequenceDiagram\s+[\s\S]*?|stateDiagram-v2\s+[\s\S]*?|classDiagram\s+[\s\S]*?|erDiagram\s+[\s\S]*?|gantt\s+[\s\S]*?|pie\s+[\s\S]*?|requirementDiagram\s+[\s\S]*?|gitGraph\s+[\s\S]*?|journey\s+[\s\S]*?|quadrantChart\s+[\s\S]*?|(?:C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)\s+[\s\S]*?|mindmap\s+[\s\S]*?|timeline\s+[\s\S]*?|sankey(?:-beta)?\s+[\s\S]*?|xychart(?:-beta)?\s+[\s\S]*?|block(?:-beta)?\s+[\s\S]*?|packet(?:-beta)?\s+[\s\S]*?|kanban\s+[\s\S]*?|architecture-beta\s+[\s\S]*?|radar-beta\s+[\s\S]*?|treemap\s+[\s\S]*?|venn-beta\s+[\s\S]*?|(?:ishikawa|fishbone)\s+[\s\S]*?|wardley\s+[\s\S]*?|treeView-beta\s+[\s\S]*?|cynefin-beta\s+[\s\S]*?|swimlanes\s+[\s\S]*?|eventmodeling\s+[\s\S]*?)/i);
     if (match) {
-        return stripFrontmatter(text.trim());
+        return text.trim();
     }
 
     logger.warn('Could not extract Mermaid code from response');
@@ -56,13 +58,16 @@ function extractMermaidCode(text) {
 /**
  * 剥离 Mermaid frontmatter（图表开头的 `---\n...\n---\n` YAML 配置块）。
  *
- * 本项目 vendored 的 mermaid（public/vendor/mermaid.min.js）不支持 frontmatter
- * （源码 grep frontmatter=0），但 LLM 偶尔按最新文档输出带 frontmatter 的
- * gitGraph 等，导致 mermaid.render 失败。在 extractMermaidCode 各返回点剥离，
- * 同时闭合 generate 与 checkSession 恢复两条路径（两者都跑 extract）。
+ * 历史用途：vendored mermaid 3.0.9 不支持 frontmatter，extractMermaidCode 各返回点
+ * 调用此函数剥离，避免 mermaid.render 失败。
  *
- * 注意：未来若升级 mermaid 到支持 frontmatter 的版本，此剥离会丢失 config
- * 配置，届时需移除此函数或改为按版本条件剥离。
+ * 现状（11.16.1）：bundle 已内嵌 processFrontmatter + js-yaml，原生解析 frontmatter
+ * （提取 title 与 config，config 合并入 mermaid 配置）。extractMermaidCode 因此**不再
+ * 调用**此函数--剥离会丢失 LLM 输出的合法 config（theme/look/themeVariables/sankey
+ * 配置等），正是 sankey+frontmatter 渲染失败的根因之一。
+ *
+ * 保留函数与导出：extractorFrontmatter.edge.test.js 仍直接测试其纯函数语义作为
+ * 独立工具的回归锁定；若未来某条路径需要降级处理（如 parse 失败时兜底剥离）可复用。
  */
 function stripFrontmatter(code) {
     if (!code) return code;
@@ -78,9 +83,11 @@ function stripFrontmatter(code) {
  * 模式清单与 DESIGN §4.3 对齐：覆盖 mermaid 11.16.1 全部 20 种新图 + 原 10 种 v9 图。
  * 优先级与 system.txt 一致；CLAUDE.md "新增 Mermaid 图表类型时需同步三处" 硬约束。
  *
- * beta 后缀（cynefin-beta / architecture-beta / sankey-beta / radar-beta /
- * venn-beta / xychart-beta / packet-beta / block-beta / treeView-beta）必须保留：
- * v11 仍把这些图标为 beta，去掉 -beta 会报 unknown diagram。
+ * beta 后缀语义（11.16.1 实测）：
+ * - sankey/xychart/block/packet 已 stabilize，bare 与 -beta 均合法，用 (?:-beta)? 双接受。
+ *   block 词义泛，锚定行首（^.../im）以免误匹配散文里的 "block"。
+ * - architecture-beta / radar-beta / venn-beta / treeView-beta / cynefin-beta 仍强制 -beta，
+ *   bare 形式 bundle 实测 FAIL，保持 -beta-only 不变。
  * C4 严格匹配 5 个关键字（Context/Container/Component/Dynamic/Deployment），
  * 不裸 `c4`——避免与变量名/类名里的 "c4" 误伤。
  */
@@ -105,12 +112,13 @@ function isMermaidCode(text) {
         /(C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)/i,
         /mindmap/i,
         /timeline/i,
-        /sankey-beta/i,
-        /xychart-beta/i,
-        /block-beta/i,
-        /packet-beta/i,
+        // 11.16.1 已 stabilize：bare 与 -beta 均接受
+        /sankey(?:-beta)?/i,
+        /xychart(?:-beta)?/i,
+        /^block(?:-beta)?\b/im,
+        /packet(?:-beta)?/i,
         /kanban/i,
-        // v11+ 新增
+        // v11+ 仍强制 -beta（bare 实测 FAIL）
         /architecture-beta/i,
         /radar-beta/i,
         /treemap/i,
@@ -119,7 +127,8 @@ function isMermaidCode(text) {
         /wardley/i,
         /treeView-beta/i,
         /cynefin-beta/i,
-        /zenuml/i,
+        // zenuml 不在 vendored bundle（detector grep=0，detectType 抛 UnknownDiagramError），
+        // 不列入 isMermaidCode：避免"提取通过 -> 渲染失败"陷阱。
         /swimlanes/i,
         /eventmodeling/i,
     ];
@@ -377,8 +386,16 @@ function fixGitGraphMergeType(code) {
  * `opt` block contains `else`, the model intended a conditional branch, so
  * convert `opt` to `alt`. Tracks block nesting via a stack so nested blocks
  * are matched correctly.
+ *
+ * 守卫：仅对 sequenceDiagram 生效。opt/alt/par/loop/critical/rect/box/end/else
+ * 是 sequenceDiagram 专属块关键字；对 sankey CSV 行（如 `opt,X,10`）、treemap/
+ * mindmap 节点名等非 sequence 代码误扫会把节点名当块关键字压栈，若后续恰好有
+ * `else,...` 行则误改。与 fixErdRelationshipLabels 的 \berDiagram\b 守卫对齐。
  */
 function fixOptWithElse(code) {
+    if (!/\bsequenceDiagram\b/i.test(code)) {
+        return { fixed: false, code };
+    }
     const lines = code.split('\n');
     const stack = [];
     const optLinesToFix = new Set();
@@ -430,8 +447,10 @@ function autoFixMermaidCode(code) {
         [/\uff09/g, ')'],
         [/\u3010/g, '['],
         [/\u3011/g, ']'],
-        [/\u300a/g, '<'],
-        [/\u300b/g, '>'],
+        // Book-title marks (U+300A/U+300B) intentionally NOT mapped to < >: in
+        // flowchart/mindmap node names, <> can be parsed as shape delimiters or HTML tags, breaking
+        // syntax. mermaid 11.16.1 renders CJK book-title marks natively. The mappings
+        // above are kept because they are CSV/syntax separators that need ASCII form.
     ];
 
     let hasChinesePunct = false;

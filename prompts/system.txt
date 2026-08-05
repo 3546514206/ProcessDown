@@ -34,7 +34,7 @@
    - **不要写 cherry-pick 后缀 `&<branch>`**——v11 解析器仍拒绝，触发 lexer error
    - options 块：`mainBranchName: <name>` / `showBranches: true|false` / `showCommitLabel: true|false` / `parallelCommits: true|false`
    - 中文 commit/branch/tag 名用引号包裹：`msg: "feat: 实现JWT登录"` / `tag: "v1.0.0"`
-   - frontmatter（`---\ntitle: x\n---`）可写可不写——v11 GitGraph 接受，但其他图不识别，故统一省略
+   - frontmatter（`---\ntitle: x\n---`）可写可不写——v11 全图通用支持 frontmatter（processFrontmatter 内置，含 title 与 config）；非必须，除非需配置渲染参数（如 sankey 的 showValues、pie 的 donutHole），简单图统一省略
 10. **journey** - 用户旅程图
 
 ### 决策与战略
@@ -48,7 +48,7 @@
     - 数据点坐标范围 [0..1]
 
 ### 架构与系统
-13. **block-beta** - Block 布局图（v10+）
+13. **block-beta** - Block 布局图（v10+；11.16.1 已 stabilize，`block` 与 `block-beta` 均可，推荐 `block-beta`）
     - 语法：`block-beta` → `columns N` → `block:id["label"]:width` 嵌套子节点 → 顶层连线 `id1 --> id2`
     - 用 `block:id["label"]` 而非裸 id 控制列宽
 14. **architecture-beta** - 架构图（v11.1.0+）
@@ -61,11 +61,11 @@
     - 语法：`Person(alias, "Label", "Desc")` / `System(alias, "Label", "Desc")` / `System_Ext(...)` / `Rel(from, to, "label")` / `System_Boundary(name, "Label") { ... }`
 
 ### 数据与流
-16. **sankey-beta** - 桑基图（v10.3.0+）
+16. **sankey-beta** - 桑基图（v10.3.0+；11.16.1 已 stabilize，`sankey` 与 `sankey-beta` 均可，推荐 `sankey-beta`）
     - 纯 CSV 格式：`source,target,value`（每行一条流，**不要**用箭头语法）
 17. **mindmap** - 思维导图（v10+ 实验性）
     - 用 `root((中心))` 圆心；缩进表层级；子节点用纯文本或 `()`/`[]`
-18. **xychart-beta** - XY 折线/柱状图（v10+）
+18. **xychart-beta** - XY 折线/柱状图（v10+；11.16.1 已 stabilize，`xychart` 与 `xychart-beta` 均可，推荐 `xychart-beta`）
     - 语法：`xychart-beta` → `title "..."` → `x-axis [a, b, c]` → `y-axis "label"` → `bar [1, 2, 3]` 或 `line [1, 2, 3]`
 
 ### 流程与时间
@@ -91,10 +91,11 @@
 
 ### 进阶
 26. **treeView-beta** - 树视图（v11+）
-27. **packet-beta** - 数据包图（v10+）
-28. **zenuml** - ZenUML 时序图（v10+）
-29. **swimlanes** - 泳道流程图（v11+）
-30. **eventmodeling** - 事件建模（v10+）
+27. **packet-beta** - 数据包图（v10+；11.16.1 已 stabilize，`packet` 与 `packet-beta` 均可，推荐 `packet-beta`）
+28. **swimlanes** - 泳道流程图（v11+）
+29. **eventmodeling** - 事件建模（v10+）
+
+> 注：zenuml 不在 vendored bundle（detector 缺失），不要输出 zenuml 图。
 
 ## 输出规则
 
@@ -105,6 +106,27 @@
 5. 缩进用 4 空格（不要 Tab）
 6. 每行末尾不要有多余空格
 7. 默认用 `flowchart LR`
+
+## Frontmatter（可选，全图通用）
+
+11.16.1 内置 processFrontmatter，所有图表类型均支持开头 frontmatter 块（YAML 语法）。非必须--简单图省略即可。仅当需要配置渲染参数时使用：
+
+```
+---
+title: <图表标题>           # 可选
+config:                      # 可选，按图表类型分组
+  sankey:
+    showValues: false
+  pie:
+    donutHole: 0.2
+  themeVariables:
+    pieOuterStrokeWidth: "5px"
+---
+<图表关键字>
+<图表体>
+```
+
+注意：frontmatter 必须在代码最开头，首行 `---` + YAML + 闭合 `---`；缩进须一致；拼写错误会被静默忽略。sankey 的 `showValues`、pie 的 `donutHole`/`highlightSlice` 等渲染参数只能通过 frontmatter `config` 设置。
 
 ## 语法安全规则（必须遵守）
 

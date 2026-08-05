@@ -12,6 +12,12 @@
  * that made the frontend mermaid.render throw on restore. checkSession now
  * re-runs extract+autoFix on the last assistant content before returning it.
  *
+ * Update (11.16.1): bundle now supports frontmatter natively (processFrontmatter
+ * + js-yaml). extractMermaidCode no longer calls stripFrontmatter -- frontmatter
+ * (title + config) is preserved so LLM-output config reaches mermaid.render.
+ * The integration tests below assert the new "frontmatter preserved" semantics;
+ * stripFrontmatter pure-function tests above still lock its standalone behavior.
+ *
  * This file covers:
  *   1. stripFrontmatter pure-function unit tests (normal / boundary / exception)
  *   2. extractMermaidCode + autoFixMermaidCode integration (regression for the
@@ -191,22 +197,24 @@ describe('extractMermaidCode + autoFixMermaidCode - integration regression', () 
         assert.strictEqual(fixed, 'gitGraph\n    commit id: "init"');
     });
 
-    it('regression: frontmatter + gitGraph -> frontmatter stripped', () => {
+    it('regression: frontmatter + gitGraph -> frontmatter PRESERVED (bundle supports it)', () => {
+        // 11.16.1 bundle 原生支持 frontmatter（processFrontmatter + js-yaml），
+        // extractMermaidCode 不再剥离--保留 title 与 config 让 mermaid.render 解析。
         const input = '---\nconfig:\n  theme: base\n---\ngitGraph\n    commit id: "init"';
         const extracted = extractMermaidCode(input);
-        assert.strictEqual(extracted, 'gitGraph\n    commit id: "init"');
+        assert.strictEqual(extracted, input);
         const fixed = autoFixMermaidCode(extracted).code;
         // No further fixes needed; output equals extracted.
-        assert.strictEqual(fixed, 'gitGraph\n    commit id: "init"');
+        assert.strictEqual(fixed, input);
     });
 
-    it('regression: frontmatter + gitGraph LR -> both issues fixed in one pass', () => {
-        // extract strips frontmatter first, then autoFix strips orientation.
+    it('regression: frontmatter + gitGraph LR -> orientation stripped, frontmatter preserved', () => {
+        // extract 保留 frontmatter，autoFix 只剥方向词 LR。frontmatter 块不动。
         const input = '---\nconfig\n---\ngitGraph LR\n    commit';
         const extracted = extractMermaidCode(input);
-        assert.strictEqual(extracted, 'gitGraph LR\n    commit');
+        assert.strictEqual(extracted, input);
         const fixed = autoFixMermaidCode(extracted).code;
-        assert.strictEqual(fixed, 'gitGraph\n    commit');
+        assert.strictEqual(fixed, '---\nconfig\n---\ngitGraph\n    commit');
     });
 
     it('idempotent: already-purified code is unchanged on re-run', () => {
@@ -235,18 +243,18 @@ describe('extractMermaidCode + autoFixMermaidCode - integration regression', () 
         assert.strictEqual(extractMermaidCode(null), null);
     });
 
-    it('mermaid code block with frontmatter -> frontmatter stripped', () => {
-        // Covers the ```mermaid ... ``` return point (the first stripFrontmatter
-        // integration site in extractMermaidCode).
+    it('mermaid code block with frontmatter -> frontmatter PRESERVED', () => {
+        // Covers the ```mermaid ... ``` return point. 11.16.1 supports frontmatter,
+        // so extract returns the code with the frontmatter block intact.
         const input = '```mermaid\n---\nconfig\n---\ngitGraph\n    commit\n```';
         const extracted = extractMermaidCode(input);
-        assert.strictEqual(extracted, 'gitGraph\n    commit');
+        assert.strictEqual(extracted, '---\nconfig\n---\ngitGraph\n    commit');
     });
 
-    it('untagged code block with frontmatter -> frontmatter stripped', () => {
-        // Covers the bare ``` ... ``` return point (second integration site).
+    it('untagged code block with frontmatter -> frontmatter PRESERVED', () => {
+        // Covers the bare ``` ... ``` return point. frontmatter kept.
         const input = '```\n---\nconfig\n---\nflowchart TD\n    A-->B\n```';
         const extracted = extractMermaidCode(input);
-        assert.strictEqual(extracted, 'flowchart TD\n    A-->B');
+        assert.strictEqual(extracted, '---\nconfig\n---\nflowchart TD\n    A-->B');
     });
 });
