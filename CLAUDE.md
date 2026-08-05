@@ -64,7 +64,7 @@ node tests/export.test.js         # 手动 PNG 渲染脚本（无断言，渲染
 ### 前端（`public/js/`，无框架）
 挂在 `window` 上的模块：`app`（输入/API/状态/登录态/抽屉）、`mermaidRender`（渲染 + 带行上下文的结构化错误诊断）、`components`（缩放/平移/背景/全屏/分隔条/快捷键）、`exportModule`（PNG 走服务端接口，SVG 走客户端 Blob）。通过 `window.*` 全局变量和 `localStorage` 通信。
 
-- **登录遮罩**：未登录时 `login-mask` 覆盖主界面，含登录/注册表单。`apiFetch`（挂在 `window.app`）统一为请求加 `Authorization: Bearer <token>`，401 时清 localStorage 登录态并弹遮罩。token 存 `localStorage['pd_token']`，用户名存 `localStorage['pd_user']`，主题仍存 `localStorage['theme']`。
+- **登录遮罩**：未登录时 `login-mask` 覆盖主界面，含登录/注册表单。`apiFetch`（挂在 `window.app`）统一为请求加 `Authorization: Bearer <token>`，401 时清 localStorage 登录态并弹遮罩。token 存 `localStorage['pd_token']`，用户名仅存内存 `state.user`（刷新即丢，需重新登录），主题仍存 `localStorage['theme']`。
 - **启动鉴权**：有 token 则 `GET /api/auth/me` 验证，失败显遮罩。
 - **左侧可收回历史会话抽屉**（`history-drawer`）：登录后 `GET /api/sessions` 渲染列表（首轮提示词前 30 字摘要），点击某条会话调 `/api/session/check` 恢复 `sessionId` 与上一张图。顶栏"历史会话"按钮 toggle 开关，抽屉内 × 按钮 `closeDrawer` 收起。
 - **已移除**：旧的"输入 uuid 恢复主页面"功能（`session-input`/`copySessionId`/`restoreSession`/`SESSION_ID_PATTERN`）已删除，`sessionInput.test.js` 同步删除。

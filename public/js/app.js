@@ -95,27 +95,33 @@ function setToken(token) {
     localStorage.setItem('pd_token', token);
 }
 
-function clearAuth() {
+function clearAuth({ keepInput = false } = {}) {
     localStorage.removeItem('pd_token');
     state.user = null;
     state.sessionId = null;
     // 登录态失效/登出时清空输入框，避免跨用户残留——这是会话切换与用户/token 切换两条入口的共同汇聚点
-    elements.inputPrompt.value = '';
+    // keepInput 例外：登录/注册表单的 401 不该把用户已写的草稿抹掉，由调用方显式传 keepInput=true
+    if (!keepInput) {
+        elements.inputPrompt.value = '';
+    }
 }
 
 /**
  * 统一的 fetch 封装：自动带 Bearer token；遇 401 清登录态并弹登录遮罩。
  * 用 401 作为“登录失效”的唯一信号，避免每个调用点重复处理。
+ * keepInputOn401=true 时，401 路径不再清空 inputPrompt（用于登录/注册表单——用户可能只是
+ * 输错密码，正在编辑的草稿应保留）。
  */
 async function apiFetch(url, options = {}) {
+    const { keepInputOn401 = false, ...rest } = options;
     const token = getToken();
-    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+    const headers = { 'Content-Type': 'application/json', ...(rest.headers || {}) };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, { ...rest, headers });
     if (res.status === 401) {
-        clearAuth();
+        clearAuth({ keepInput: keepInputOn401 });
         showLoginMask();
         throw new Error('登录已失效，请重新登录');
     }
@@ -177,8 +183,10 @@ async function handleLogin(event) {
         return;
     }
     try {
+        // keepInputOn401=true：登录失败时不清草稿——输错密码不该抹掉用户已写的描述
         const res = await apiFetch('/api/auth/login', {
             method: 'POST',
+            keepInputOn401: true,
             body: JSON.stringify({ username, password })
         });
         const data = await res.json();
@@ -209,8 +217,10 @@ async function handleRegister(event) {
         return;
     }
     try {
+        // keepInputOn401=true：注册失败时不清草稿，与 handleLogin 语义对齐
         const res = await apiFetch('/api/auth/register', {
             method: 'POST',
+            keepInputOn401: true,
             body: JSON.stringify({ username, password })
         });
         const data = await res.json();

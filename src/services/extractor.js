@@ -41,8 +41,10 @@ function extractMermaidCode(text) {
         return stripFrontmatter(text.trim());
     }
 
-    // Try to find flowchart/sequenceDiagram keywords
-    match = text.match(/(flowchart\s+[^\n]+|sequenceDiagram\s+[\s\S]*?|stateDiagram-v2\s+[\s\S]*?|classDiagram\s+[\s\S]*?|erDiagram\s+[\s\S]*?|gantt\s+[\s\S]*?|pie\s+[\s\S]*?|requirementDiagram\s+[\s\S]*?|gitGraph\s+[\s\S]*?|journey\s+[\s\S]*?)/i);
+    // Try to find flowchart/sequenceDiagram/etc. keywords (covers all v9-v11 supported diagrams)
+    // 关键字清单与 isMermaidCode 模式保持一致（CLAUDE.md 硬约束"三处同步"），
+    // 注意 cynefin-beta 比 cynefin 长，必须先放长关键字再放短关键字以免被短前缀截断
+    match = text.match(/(flowchart\s+[^\n]+|sequenceDiagram\s+[\s\S]*?|stateDiagram-v2\s+[\s\S]*?|classDiagram\s+[\s\S]*?|erDiagram\s+[\s\S]*?|gantt\s+[\s\S]*?|pie\s+[\s\S]*?|requirementDiagram\s+[\s\S]*?|gitGraph\s+[\s\S]*?|journey\s+[\s\S]*?|quadrantChart\s+[\s\S]*?|(?:C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)\s+[\s\S]*?|mindmap\s+[\s\S]*?|timeline\s+[\s\S]*?|sankey-beta\s+[\s\S]*?|xychart-beta\s+[\s\S]*?|block-beta\s+[\s\S]*?|packet-beta\s+[\s\S]*?|kanban\s+[\s\S]*?|architecture-beta\s+[\s\S]*?|radar-beta\s+[\s\S]*?|treemap\s+[\s\S]*?|venn-beta\s+[\s\S]*?|(?:ishikawa|fishbone)\s+[\s\S]*?|wardley\s+[\s\S]*?|treeView-beta\s+[\s\S]*?|cynefin-beta\s+[\s\S]*?|zenuml\s+[\s\S]*?|swimlanes\s+[\s\S]*?|eventmodeling\s+[\s\S]*?)/i);
     if (match) {
         return stripFrontmatter(text.trim());
     }
@@ -72,11 +74,21 @@ function stripFrontmatter(code) {
 
 /**
  * Check if text looks like Mermaid code
+ *
+ * 模式清单与 DESIGN §4.3 对齐：覆盖 mermaid 11.16.1 全部 20 种新图 + 原 10 种 v9 图。
+ * 优先级与 system.txt 一致；CLAUDE.md "新增 Mermaid 图表类型时需同步三处" 硬约束。
+ *
+ * beta 后缀（cynefin-beta / architecture-beta / sankey-beta / radar-beta /
+ * venn-beta / xychart-beta / packet-beta / block-beta / treeView-beta）必须保留：
+ * v11 仍把这些图标为 beta，去掉 -beta 会报 unknown diagram。
+ * C4 严格匹配 5 个关键字（Context/Container/Component/Dynamic/Deployment），
+ * 不裸 `c4`——避免与变量名/类名里的 "c4" 误伤。
  */
 function isMermaidCode(text) {
     if (!text) return false;
 
     const mermaidPatterns = [
+        // v9 保留
         /flowchart\s*[TD]?[LR]?/i,
         /sequenceDiagram/i,
         /stateDiagram-v2/i,
@@ -87,7 +99,29 @@ function isMermaidCode(text) {
         /requirementDiagram/i,
         /gitGraph/i,
         /journey/i,
-        /graph\s*[TD]?[LR]?/i
+        /graph\s*[TD]?[LR]?/i,
+        // v10+ 新增
+        /quadrantChart/i,
+        /(C4Context|C4Container|C4Component|C4Dynamic|C4Deployment)/i,
+        /mindmap/i,
+        /timeline/i,
+        /sankey-beta/i,
+        /xychart-beta/i,
+        /block-beta/i,
+        /packet-beta/i,
+        /kanban/i,
+        // v11+ 新增
+        /architecture-beta/i,
+        /radar-beta/i,
+        /treemap/i,
+        /venn-beta/i,
+        /(ishikawa|fishbone)/i,
+        /wardley/i,
+        /treeView-beta/i,
+        /cynefin-beta/i,
+        /zenuml/i,
+        /swimlanes/i,
+        /eventmodeling/i,
     ];
 
     return mermaidPatterns.some(pattern => pattern.test(text));
