@@ -213,7 +213,9 @@
     <div id="toast-container" class="toast-container"></div>
 
     <!-- Scripts -->
-    <script src="/vendor/mermaid.min.js"></script>
+    <!-- mermaid.min.js 带 ?v= 做 cache-busting：vendor 走 max-age=86400 强缓存，
+         升级 bundle 后必须同步改版本号，否则浏览器复用旧缓存（曾导致 sankey 等新图渲染失败）。 -->
+    <script src="/vendor/mermaid.min.js?v=11.16.1"></script>
     <script src="/js/app.js"></script>
     <script src="/js/mermaid-render.js"></script>
     <script src="/js/components.js"></script>
