@@ -11,7 +11,7 @@ const mermaidRender = {
         this.container = document.getElementById('mermaid-container');
     },
 
-    async render(code) {
+    async render(code, options = {}) {
         if (!code) {
             this.clear();
             return;
@@ -31,6 +31,12 @@ const mermaidRender = {
             this.applyThemeClass();
 
         } catch (error) {
+            // silent: 流式节流渲染时代码不完整是常态，失败时保留上一次成功渲染，
+            // 不写 render-error 进 DOM（否则预览区每 600ms 闪烁错误）。仅最终渲染
+            // （非 silent）才展示诊断错误。
+            if (options.silent) {
+                return;
+            }
             console.error('Mermaid render error:', error);
 
             let errorLine = '';

@@ -5,13 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ProcessDown - AI 流程图生成器</title>
     <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="/css/chat.css">
 </head>
 <body>
     <div class="app-container">
         <!-- Header -->
         <header class="app-header">
             <div class="header-left">
-                <button id="btn-toggle-drawer" class="btn btn-small toggle-drawer-btn" title="历史会话">
+                <button id="btn-toggle-drawer" class="btn btn-small toggle-drawer-btn" title="历史会话 (Ctrl+K)">
                     <svg viewBox="0 0 24 24" width="16" height="16">
                         <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/>
                     </svg>
@@ -19,8 +20,7 @@
                 </button>
                 <div class="logo">
                     <h1>ProcessDown</h1>
-                    <span class="subtitle">AI 驱动的流程图生成器</span>
-                    <span class="support-info">支持流程图、时序图、状态图、类图、ER 图、甘特图、饼图、Cynefin、四象限图、Block 布局、架构图、C4、思维导图、桑基图等 30 种 mermaid 图表 · <a href="https://mermaid.ai/open-source/intro/" target="_blank" rel="noopener">mermaid 官方文档</a>（需互联网访问）</span>
+                    <span class="support-info">AI 流程图生成器 · 支持流程图/时序图/状态图/类图/ER图/甘特图/思维导图等 30 种图表 · <a href="https://mermaid.ai/open-source/intro/" target="_blank" rel="noopener">官方文档</a></span>
                 </div>
             </div>
             <div class="header-actions">
@@ -36,45 +36,33 @@
 
         <!-- Main Content -->
         <main class="app-main">
-            <!-- Left Panel: Input -->
+            <!-- Left Panel: Chat -->
             <div class="panel panel-left" id="panel-left">
-                <div class="panel-header">
-                    <h2>输入</h2>
-                </div>
-
-                <div class="panel-content">
-                    <textarea id="input-prompt" class="input-area" placeholder="描述你想要生成的流程图...
-
-例如：
-- 用户注册流程，包含验证邮箱、设置密码、发送欢迎邮件
-- 订单处理流程，从下单、支付、发货到完成
-- 请假申请流程：员工提交 → 主管审批 → HR审核 → 最终结果"></textarea>
-                    <div class="input-actions">
-                        <button id="btn-generate" class="btn btn-primary">
-                            <span class="btn-text">生成流程图</span>
-                            <span class="btn-loading" style="display:none">生成中...</span>
-                        </button>
-                        <button id="btn-clear" class="btn btn-secondary">清空</button>
-                    </div>
-                </div>
-
-                <!-- Code Editor Section -->
-                <div class="code-section">
-                    <div class="code-header">
-                        <h3>Mermaid 代码</h3>
-                        <div class="code-actions">
-                            <button id="btn-copy" class="btn btn-small" title="复制代码">
-                                <svg viewBox="0 0 24 24" width="16" height="16">
-                                    <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
-                                </svg>
-                                复制
-                            </button>
+                <!-- 消息列表（滚动区） -->
+                <div class="chat-messages" id="chat-messages">
+                    <!-- 欢迎态：空会话时仅展示示例输入提示，不重复 header 已有的品牌信息 -->
+                    <div class="welcome-state" id="welcome-state">
+                        <div class="example-chips">
+                            <button class="example-chip" data-prompt="用户注册流程，包含验证邮箱、设置密码、发送欢迎邮件">用户注册流程</button>
+                            <button class="example-chip" data-prompt="订单处理流程，从下单、支付、发货到完成">订单处理流程</button>
+                            <button class="example-chip" data-prompt="请假申请流程：员工提交 -> 主管审批 -> HR审核 -> 最终结果">请假审批流程</button>
+                            <button class="example-chip" data-prompt="系统架构图：网关 + 用户服务 + 订单服务 + MySQL + Redis">系统架构图</button>
                         </div>
                     </div>
-                    <textarea id="code-editor" class="code-editor" placeholder="Mermaid 代码将显示在这里..." spellcheck="false"></textarea>
-                    <div class="code-footer">
-                        <span id="code-status" class="status-text">就绪</span>
-                    </div>
+                    <!-- 消息由 chat.js 动态插入 -->
+                    <!-- 回到最新按钮 -->
+                    <button class="scroll-bottom-btn" id="scroll-bottom-btn" title="回到底部" hidden>
+                        <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 16l-6-6h12z"/></svg>
+                    </button>
+                </div>
+
+                <!-- 输入区（底部固定） -->
+                <div class="chat-input-area" id="chat-input-area">
+                    <textarea id="chat-textarea" class="chat-textarea" placeholder="描述你想生成的流程图…  Enter 发送 / Shift+Enter 换行" rows="1"></textarea>
+                    <button id="chat-send" class="chat-send-btn" title="发送 (Enter / Ctrl+Enter)">
+                        <svg class="icon-send" viewBox="0 0 24 24" width="20" height="20"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+                        <svg class="icon-stop" viewBox="0 0 24 24" width="18" height="18" style="display:none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+                    </button>
                 </div>
             </div>
 
@@ -84,71 +72,54 @@
             <!-- Right Panel: Preview -->
             <div class="panel panel-right" id="panel-right">
                 <div class="panel-header">
-                    <h2>预览</h2>
+                    <!-- 预览 / 代码 模式切换 -->
+                    <div class="preview-tabs" id="preview-tabs">
+                        <button class="preview-tab active" id="btn-tab-preview" data-mode="preview">预览</button>
+                        <button class="preview-tab" id="btn-tab-code" data-mode="code">代码</button>
+                    </div>
                     <div class="preview-controls">
                         <div class="zoom-controls">
                             <button id="btn-zoom-out" class="icon-btn" title="缩小 (Ctrl+-)">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M19 13H5v-2h14v2z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M19 13H5v-2h14v2z"/></svg>
                             </button>
                             <span id="zoom-level" class="zoom-level">100%</span>
                             <button id="btn-zoom-in" class="icon-btn" title="放大 (Ctrl++)">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg>
                             </button>
                             <button id="btn-zoom-fit" class="icon-btn" title="适应窗口">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M15 3l2.3 2.3-2.89 2.87 1.42 1.42L18.7 6.7 21 9V3h-6zM3 9l2.3-2.3 2.87 2.89 1.42-1.42L6.7 5.3 9 3H3v6zm6 12l-2.3-2.3 2.89-2.87-1.42-1.42L5.3 17.3 3 15v6h6zm12-6l-2.3 2.3-2.87-2.89-1.42 1.42 2.89 2.87L15 21h6v-6z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M15 3l2.3 2.3-2.89 2.87 1.42 1.42L18.7 6.7 21 9V3h-6zM3 9l2.3-2.3 2.87 2.89 1.42-1.42L6.7 5.3 9 3H3v6zm6 12l-2.3-2.3 2.89-2.87-1.42-1.42L5.3 17.3 3 15v6h6zm12-6l-2.3 2.3-2.87-2.89-1.42 1.42 2.89 2.87L15 21h6v-6z"/></svg>
                             </button>
                             <button id="btn-zoom-reset" class="icon-btn" title="重置 (Ctrl+0)">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
                             </button>
                         </div>
                         <div class="divider"></div>
                         <div class="bg-controls">
                             <button id="btn-bg-dark" class="icon-btn" title="深色背景">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
                             </button>
                             <button id="btn-bg-light" class="icon-btn" title="白色背景">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 0 0 0-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>
                             </button>
                             <button id="btn-bg-transparent" class="icon-btn" title="透明背景">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/>
-                                    <path d="M7 7h10v2H7zm0 4h10v2H7zm0 4h7v2H7z" opacity=".5"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/><path d="M7 7h10v2H7zm0 4h10v2H7zm0 4h7v2H7z" opacity=".5"/></svg>
                             </button>
                         </div>
                         <div class="divider"></div>
                         <div class="export-controls">
                             <button id="btn-export-png" class="btn btn-small" title="导出 PNG">
-                                <svg viewBox="0 0 24 24" width="16" height="16">
-                                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                                 PNG
                             </button>
                             <button id="btn-export-svg" class="btn btn-small" title="导出 SVG">
-                                <svg viewBox="0 0 24 24" width="16" height="16">
-                                    <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                                 SVG
                             </button>
                         </div>
                         <div class="divider"></div>
                         <div class="view-controls">
                             <button id="btn-preview-fullscreen" class="icon-btn" title="预览区全屏">
-                                <svg viewBox="0 0 24 24" width="18" height="18">
-                                    <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
-                                </svg>
+                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
                             </button>
                         </div>
                     </div>
@@ -159,6 +130,8 @@
                             <pre id="mermaid-code" class="mermaid-code"></pre>
                         </div>
                     </div>
+                    <!-- 代码模式视图：只读展示当前 mermaid 源码 -->
+                    <pre class="code-view" id="code-view" hidden></pre>
                 </div>
             </div>
         </main>
@@ -175,7 +148,7 @@
         <div class="drawer-header">
             <h2>历史会话</h2>
             <div class="drawer-actions">
-                <button id="btn-new-session" class="btn btn-small" title="开始新会话">新建</button>
+                <button id="btn-new-session" class="btn btn-small" title="开始新会话 (Ctrl+K)">新建</button>
                 <button id="btn-close-drawer" class="icon-btn" title="收起历史会话" aria-label="收起历史会话">
                     <svg viewBox="0 0 24 24" width="16" height="16"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
                 </button>
@@ -217,6 +190,7 @@
          升级 bundle 后必须同步改版本号，否则浏览器复用旧缓存（曾导致 sankey 等新图渲染失败）。 -->
     <script src="/vendor/mermaid.min.js?v=11.16.1"></script>
     <script src="/js/app.js"></script>
+    <script src="/js/chat.js"></script>
     <script src="/js/mermaid-render.js"></script>
     <script src="/js/components.js"></script>
     <script src="/js/export.js"></script>

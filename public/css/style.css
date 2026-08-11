@@ -58,25 +58,31 @@ body {
     flex-shrink: 0;
 }
 
+.logo {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    overflow: hidden;
+    min-width: 0;
+}
+
 .logo h1 {
     font-size: 20px;
     font-weight: 700;
     color: var(--accent-color);
     letter-spacing: -0.3px;
-}
-
-.logo .subtitle {
-    font-size: 12px;
-    color: var(--text-secondary);
-    margin-left: 10px;
-    font-weight: 400;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .logo .support-info {
     font-size: 12px;
     color: var(--text-secondary);
-    margin-left: 10px;
     font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .logo .support-info a {
@@ -99,6 +105,8 @@ body {
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .user-badge {
@@ -135,8 +143,9 @@ body {
     flex: 1;
 }
 
+/* 渲染区占比大于对话框：流程图通常比聊天文本更需要横向空间 */
 .panel-right {
-    flex: 1.5;
+    flex: 1.8;
 }
 
 /* ========================================
@@ -186,117 +195,9 @@ body {
 }
 
 /* ========================================
-   Input Panel
+   Chat / Input Panel — 样式见 chat.css
+   （旧 .panel-content / .input-area / .code-section 随聊天改版移除）
    ======================================== */
-
-.panel-content {
-    padding: 0;
-    flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
-}
-
-.input-area {
-    width: 100%;
-    min-height: 180px;
-    padding: 16px 16px;
-    background: var(--bg-primary);
-    border: none;
-    border-bottom: 2px solid var(--border-strong);
-    color: var(--text-primary);
-    font-size: 14px;
-    line-height: 1.7;
-    resize: vertical;
-    max-height: 50vh;
-    transition: border-color 0.2s;
-}
-
-.input-area:focus {
-    outline: none;
-    border-bottom-color: var(--accent-color);
-}
-
-.input-area::placeholder {
-    color: var(--text-secondary);
-    opacity: 0.6;
-}
-
-.input-actions {
-    display: flex;
-    gap: 10px;
-    padding: 12px 16px;
-    background: var(--bg-primary);
-}
-
-/* ========================================
-   Code Section
-   ======================================== */
-
-.code-section {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    border-top: 2px solid var(--border-strong);
-}
-
-.code-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 16px;
-    height: 36px;
-    background: var(--bg-secondary);
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
-}
-
-.code-header h3 {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-}
-
-.code-actions {
-    display: flex;
-    gap: 6px;
-}
-
-.code-editor {
-    flex: 1;
-    width: 100%;
-    min-height: 0;
-    padding: 12px 16px;
-    background: var(--bg-tertiary);
-    border: none;
-    color: var(--text-primary);
-    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', 'Monaco', 'Menlo', monospace;
-    font-size: 13px;
-    line-height: 1.6;
-    resize: none;
-    tab-size: 2;
-}
-
-.code-editor:focus {
-    outline: none;
-}
-
-.code-footer {
-    display: flex;
-    align-items: center;
-    height: 28px;
-    padding: 0 16px;
-    background: var(--bg-secondary);
-    border-top: 1px solid var(--border-color);
-    flex-shrink: 0;
-}
-
-.code-footer .status-text {
-    font-size: 11px;
-    color: var(--text-secondary);
-}
 
 /* ========================================
    Preview Area
@@ -802,6 +703,16 @@ body {
     font-size: 12px;
     text-align: center;
     padding: 24px 8px;
+    opacity: 0.7;
+}
+
+.drawer-group-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    padding: 12px 8px 4px;
     opacity: 0.7;
 }
 

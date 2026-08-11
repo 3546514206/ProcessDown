@@ -1,0 +1,472 @@
+/* ProcessDown 聊天模式样式
+   随聊天改版新增；复用 style.css 的 CSS 变量，深色主题。
+   覆盖：消息列表、气泡、思考折叠块、代码折叠块、流式光标、输入区、
+   预览/代码 Tab、欢迎态、示例 chip、回到底部按钮。 */
+
+/* ========================================
+   Chat Messages 容器
+   ======================================== */
+
+.chat-messages {
+    flex: 1;
+    /* min-height:0 是 flex 子项能真正 overflow 滚动的必要条件，
+       否则消息会撑高容器把输入区顶出视口、overflow-y:auto 形同虚设。 */
+    min-height: 0;
+    overflow-y: auto;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+    background: var(--bg-primary);
+}
+
+/* ========================================
+   Welcome State 欢迎态
+   ======================================== */
+
+.welcome-state {
+    margin: auto;
+    text-align: center;
+    color: var(--text-secondary);
+    max-width: 460px;
+}
+
+.welcome-state[hidden] {
+    display: none;
+}
+
+.example-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+}
+
+.example-chip {
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 6px 14px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.example-chip:hover {
+    border-color: var(--accent-color);
+    color: var(--text-primary);
+}
+
+/* ========================================
+   Message 消息气泡
+   ======================================== */
+
+.message {
+    display: flex;
+    flex-direction: column;
+    max-width: 100%;
+    animation: msg-in 0.2s ease-out;
+}
+
+@keyframes msg-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.message-user {
+    align-self: flex-end;
+    background: var(--bg-hover);
+    border-radius: 12px 12px 2px 12px;
+    padding: 8px 12px;
+    max-width: 85%;
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.message-ai {
+    align-self: stretch;
+    border-left: 2px solid var(--accent-color);
+    padding: 4px 0 4px 12px;
+}
+
+/* ========================================
+   Think Block 思考过程折叠块
+   ======================================== */
+
+.think-block {
+    background: var(--bg-tertiary);
+    border-left: 3px solid var(--border-strong);
+    border-radius: 0 6px 6px 0;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1.6;
+}
+
+.think-block[hidden] {
+    display: none;
+}
+
+/* 流式中：左侧竖线脉动，暗示进行中 */
+.think-block.streaming {
+    border-left-color: var(--accent-color);
+    animation: think-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes think-pulse {
+    /* 只脉冲左侧竖线颜色，正文保持全不透明，流式阅读思考时不晃眼 */
+    0%, 100% { border-left-color: var(--accent-color); }
+    50% { border-left-color: var(--border-strong); }
+}
+
+.think-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    margin-bottom: 4px;
+    color: var(--text-secondary);
+}
+
+.think-header:hover {
+    color: var(--text-primary);
+}
+
+.think-chevron {
+    fill: currentColor;
+    transition: transform 0.2s;
+}
+
+/* 展开（默认）chevron 朝下；折叠时旋转 */
+.think-block.collapsed .think-chevron {
+    transform: rotate(-90deg);
+}
+
+.think-content {
+    overflow: hidden;
+    max-height: 1000px;
+    opacity: 1;
+    transition: max-height 0.2s ease, opacity 0.2s ease, padding 0.2s ease;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.think-block.collapsed .think-content {
+    max-height: 0;
+    opacity: 0;
+    padding: 0;
+    margin: 0;
+}
+
+/* ========================================
+   Code Details 代码折叠块（<details>）
+   ======================================== */
+
+.code-details {
+    margin-top: 8px;
+}
+
+.code-details > summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-secondary);
+    list-style: none;
+    user-select: none;
+    padding: 4px 0;
+}
+
+.code-details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.code-details > summary:hover {
+    color: var(--text-primary);
+}
+
+.code-details[open] > summary .think-chevron {
+    transform: rotate(0deg);
+}
+
+.code-details > summary .think-chevron {
+    transform: rotate(-90deg);
+}
+
+.code-copy-btn {
+    margin-left: auto;
+    padding: 2px 8px;
+    font-size: 11px;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.code-copy-btn:hover {
+    background: var(--btn-hover-bg);
+    color: var(--text-primary);
+}
+
+.code-pre {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 12px;
+    margin: 6px 0 0;
+    font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Monaco, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text-primary);
+}
+
+/* ========================================
+   Action Row 操作行
+   ======================================== */
+
+.action-row {
+    display: flex;
+    gap: 4px;
+    margin-top: 8px;
+    opacity: 1;
+    transition: opacity 0.2s;
+}
+
+.action-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    background: transparent;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.action-btn:hover {
+    background: var(--btn-hover-bg);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+}
+
+/* ========================================
+   Stream Caret 流式光标
+   ======================================== */
+
+.stream-caret {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: var(--accent-color);
+    vertical-align: text-bottom;
+    margin-left: 2px;
+    margin-top: 4px;
+    border-radius: 1px;
+    animation: caret-blink 1s steps(2) infinite;
+}
+
+@keyframes caret-blink {
+    0%, 50% { opacity: 1; }
+    50.01%, 100% { opacity: 0; }
+}
+
+/* ========================================
+   Scroll Bottom Button 回到底部
+   ======================================== */
+
+.scroll-bottom-btn {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    transition: all 0.15s;
+}
+
+.scroll-bottom-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-color);
+}
+
+.scroll-bottom-btn svg {
+    fill: currentColor;
+}
+
+.scroll-bottom-btn[hidden] {
+    display: none;
+}
+
+/* ========================================
+   Chat Input Area 输入区
+   ======================================== */
+
+.chat-input-area {
+    flex-shrink: 0;
+    padding: 8px 12px 12px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+}
+
+.chat-textarea {
+    flex: 1;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 10px 12px;
+    color: var(--text-primary);
+    font-size: 14px;
+    line-height: 1.5;
+    resize: none;
+    min-height: 40px;
+    max-height: 160px;
+    overflow-y: auto;
+    font-family: inherit;
+    transition: border-color 0.15s;
+}
+
+.chat-textarea:focus {
+    outline: none;
+    border-color: var(--accent-color);
+}
+
+.chat-textarea::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+.chat-send-btn {
+    flex-shrink: 0;
+    width: 36px;
+    height: 36px;
+    border: none;
+    background: var(--accent-color);
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.15s;
+}
+
+.chat-send-btn:hover {
+    background: var(--accent-hover);
+}
+
+.chat-send-btn:disabled {
+    background: #444;
+    cursor: not-allowed;
+}
+
+.chat-send-btn svg {
+    fill: #fff;
+}
+
+/* 流式中：发送按钮变为停止按钮（红色调）。
+   不单独定义 :hover：.streaming(0,2,0) 特异性高于 :hover(0,1,1)，
+   hover 时仍保持 --error-color，无需硬编码更深的红色。 */
+.chat-send-btn.streaming {
+    background: var(--error-color);
+}
+
+/* ========================================
+   Preview Tabs 预览/代码 Tab
+   ======================================== */
+
+.preview-tabs {
+    display: flex;
+    gap: 2px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    padding: 2px;
+}
+
+.preview-tab {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.preview-tab:hover {
+    color: var(--text-primary);
+}
+
+.preview-tab.active {
+    background: var(--accent-color);
+    color: #fff;
+}
+
+/* ========================================
+   Code View 代码模式视图
+   ======================================== */
+
+.code-view {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 16px;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Monaco, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: auto;
+    white-space: pre;
+    /* preview-area 是 cursor:grab（供拖拽平移），代码视图是只读文本，改回默认光标 */
+    cursor: auto;
+}
+
+.code-view[hidden] {
+    display: none;
+}
+
+/* preview-content 与 code-view 互斥：[hidden] 显式 display:none
+   （HTML 默认 [hidden] 在部分 flex 上下文会被覆盖，这里兜底） */
+#preview-content[hidden] {
+    display: none;
+}
+
+/* ========================================
+   Responsive
+   ======================================== */
+
+@media (max-width: 768px) {
+    .message-user {
+        max-width: 90%;
+    }
+
+    .chat-textarea {
+        max-height: 120px;
+    }
+}

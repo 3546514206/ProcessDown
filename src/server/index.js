@@ -44,6 +44,7 @@ const api = createApiRouter(config);
 // 需求 2（否则默认部署下可被 curl 白嫖 LLM 或打 CPU）。
 const PROTECTED_USER_ROUTES = new Set([
     '/api/generate',
+    '/api/generate/stream',
     '/api/regenerate',
     '/api/export/png',
     '/api/session',
@@ -85,11 +86,17 @@ function serveStaticFile(filePath, res) {
         // 流式传输 + Content-Length：3.3MB 的 mermaid.min.js 若用 readFile 一次性
         // 读入内存再 end，慢网络/反代下易超时或中断（部分浏览器报“找不到”）。
         // createReadStream 边读边发，Content-Length 让浏览器/反代正确判断进度。
-        // 静态资源缓存一天避免重复拉大文件；index.html 走 no-cache 保证更新可见。
+        //
+        // 缓存策略：vendor（mermaid.min.js，3.3MB 且带 ?v= 版本号 busting）走强缓存
+        // 省带宽；应用自身的 JS/CSS（app.js/chat.js/style.css/chat.css）迭代频繁且无
+        // ?v=，走 no-cache 确保每次拿到最新版，避免改版后浏览器复用旧脚本。
+        const vendorDir = path.join(process.cwd(), 'public', 'vendor');
+        const isVendor = filePath.startsWith(vendorDir + path.sep);
+        const cacheControl = isVendor ? 'public, max-age=86400' : 'no-cache';
         res.writeHead(200, {
             'Content-Type': mimeType,
             'Content-Length': stat.size,
-            'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=86400'
+            'Cache-Control': cacheControl
         });
         fs.createReadStream(filePath).pipe(res);
     });
@@ -190,6 +197,10 @@ const server = http.createServer(async (req, res) => {
             switch (parsedUrl.pathname) {
                 case '/api/generate':
                     await api.generate(req, res);
+                    break;
+
+                case '/api/generate/stream':
+                    await api.generateStream(req, res);
                     break;
 
                 case '/api/regenerate':

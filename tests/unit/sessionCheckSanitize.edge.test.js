@@ -216,4 +216,39 @@ describe('POST /api/session/check - lastMermaid sanitization', () => {
         assert.strictEqual(after, before);
         assert.ok(after.includes('gitGraph LR:'), 'stored history should still hold the original LR header');
     });
+
+    it('sanitizes every assistant entry in the history array (not just lastMermaid)', () => {
+        // R2 发现：前端 renderHistory 走 history 分支（非 lastMermaid），故 history
+        // 数组里的 assistant content 也必须净化，否则旧会话恢复时 gitGraph LR 等仍
+        // 渲染失败。此用例锁定 history 字段的净化语义，与 lastMermaid 一致。
+        const raw = 'gitGraph LR:\n    commit id: "init"';
+        seedStore.append(ID, '画一个 git 提交图', raw);
+
+        const res = createMockRes();
+        router.checkSession(createMockReq('POST', { sessionId: ID }), res);
+
+        const body = JSON.parse(res.body);
+        assert.ok(Array.isArray(body.history), 'history should be an array');
+        const assistants = body.history.filter(h => h.role === 'assistant');
+        assert.ok(assistants.length > 0);
+        assert.strictEqual(assistants[assistants.length - 1].content, 'gitGraph\n    commit id: "init"');
+        assert.strictEqual(assistants[assistants.length - 1].content, body.lastMermaid);
+    });
+
+    it('sanitizes multiple assistant entries (multi-round history)', () => {
+        // 多轮历史里每条 assistant content 都需净化（map 对所有 assistant 统一处理）。
+        // 锁定 2 轮 gitGraph LR 同时被净化的场景，确保不止最后一条被处理。
+        seedStore.append(ID, '画 git 图1', 'gitGraph LR:\n    commit id: "a"');
+        seedStore.append(ID, '画 git 图2', 'gitGraph LR\n    commit id: "b"');
+
+        const res = createMockRes();
+        router.checkSession(createMockReq('POST', { sessionId: ID }), res);
+
+        const body = JSON.parse(res.body);
+        const assistants = body.history.filter(h => h.role === 'assistant');
+        assert.strictEqual(assistants.length, 2);
+        assert.strictEqual(assistants[0].content, 'gitGraph\n    commit id: "a"');
+        assert.strictEqual(assistants[1].content, 'gitGraph\n    commit id: "b"');
+        assert.strictEqual(body.lastMermaid, 'gitGraph\n    commit id: "b"');
+    });
 });

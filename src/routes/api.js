@@ -222,8 +222,22 @@ function createRouter(config) {
             const exists = sessionStore.exists(sessionId);
 
             let lastMermaid = null;
+            let history = null;
             if (exists) {
-                const history = sessionStore.readHistory(sessionId);
+                history = sessionStore.readHistory(sessionId);
+                // 旧会话里残留的不兼容写法（如 gitGraph LR:，早于 extractor 某次增强）
+                // 会让前端 mermaid.render 失败。对每条 assistant content 跑 extract+autoFix，
+                // 与 generate 链路保持单一真源--前端 renderHistory 渲染的是净化后的内容
+                // （此前只净化 lastMermaid，但前端走 history 分支，净化未到达渲染路径）。
+                // 不写盘：checkSession 只读，仅净化返回值。extract 对非 mermaid 内容返回
+                // null 时保留原文，避免丢数据。frontmatter 不剥离（bundle 11.16.1 原生支持）。
+                history = history.map(h => {
+                    if (h.role === 'assistant' && h.content) {
+                        const extracted = extractMermaidCode(h.content);
+                        if (extracted) return { ...h, content: autoFixMermaidCode(extracted).code };
+                    }
+                    return h;
+                });
                 for (let i = history.length - 1; i >= 0; i--) {
                     if (history[i].role === 'assistant') {
                         lastMermaid = history[i].content;
@@ -232,22 +246,11 @@ function createRouter(config) {
                 }
             }
 
-            // 历史会话里的 assistant content 是当时净化逻辑处理后的产物；净化逻辑
-            // 后续增强（如 fixGitGraphOrientation）后，旧历史里残留的不兼容写法
-            // （gitGraph LR: 等）会让前端 mermaid.render 失败。返回前用最新 extractor
-            // 再跑一遍 extract+autoFix，与 generate 链路保持单一真源。不写盘--
-            // checkSession 仍是只读语义，只净化返回值。extract 对非 mermaid 内容返回
-            // null 时保留原文，避免丢数据（前端会显示渲染错误，便于诊断，行为与修复前
-            // 一致）。注：frontmatter 不再剥离--bundle 11.16.1 原生支持（processFrontmatter）。
-            if (lastMermaid) {
-                const extracted = extractMermaidCode(lastMermaid);
-                if (extracted) {
-                    lastMermaid = autoFixMermaidCode(extracted).code;
-                }
-            }
-
+            // history 已被 readHistory 截断到 maxHistory（默认 20 条=10 轮），
+            // 供前端 renderHistory 重建完整对话；体积受 maxHistory 约束。
+            // lastMermaid 从净化后的 history 派生，无需再单独 extract+autoFix。
             res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, exists, sessionId, lastMermaid }));
+            res.end(JSON.stringify({ success: true, exists, sessionId, lastMermaid, history }));
         },
 
         /**
@@ -321,6 +324,90 @@ function createRouter(config) {
                 logger.error('Generate error:', error.message);
                 res.writeHead(500, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify(llmErrorResponse(error, 'Generation Failed')));
+            }
+        },
+
+        /**
+         * POST /api/generate/stream
+         * 流式生成：SSE 响应，逐 delta 推 thinking/content，结束推 done。
+         * 请求体与 /api/generate 一致；校验失败返回 400 JSON（保持与非流式一致），
+         * 通过校验后升级为 text/event-stream，后续错误以 error 事件送达。
+         * 客户端断开时 AbortController 中止上游 LLM 请求，避免空跑。
+         */
+        async generateStream(req, res) {
+            const body = req.body;
+            const validation = validateGenerateRequest(body);
+            if (!validation.valid) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Validation Error', message: validation.errors.join(', ') }));
+                return;
+            }
+
+            const { prompt, mermaid: currentMermaid, sessionId } = body;
+
+            let sessionStore = null;
+            if (sessionId !== undefined) {
+                sessionStore = sessionStoreFor(req);
+                if (!sessionStore.isValidId(sessionId)) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Validation Error', message: 'Invalid sessionId format' }));
+                    return;
+                }
+            }
+
+            const history = sessionStore ? sessionStore.readHistory(sessionId) : [];
+
+            // 升级为 SSE。X-Accel-Buffering: no 让 Nginx 反代不缓冲，保证流式
+            res.writeHead(200, {
+                'Content-Type': 'text/event-stream',
+                'Cache-Control': 'no-cache, no-transform',
+                'Connection': 'keep-alive',
+                'X-Accel-Buffering': 'no'
+            });
+
+            const send = (obj) => {
+                if (res.writableEnded) return false;
+                res.write(`data: ${JSON.stringify(obj)}\n\n`);
+                return true;
+            };
+
+            // 客户端断开 -> 中止上游 LLM 流，generator 抛 ABORTED，下面 catch 静默收尾
+            const controller = new AbortController();
+            req.on('close', () => controller.abort());
+
+            try {
+                await generator.generateStream(prompt, currentMermaid, history, {
+                    onThinking: (delta) => send({ type: 'thinking', delta }),
+                    onContent: (delta) => send({ type: 'content', delta }),
+                    onDone: ({ mermaid, fixes, extracted }) => {
+                        if (sessionStore) {
+                            try {
+                                sessionStore.append(sessionId, prompt, mermaid);
+                            } catch (e) {
+                                logger.error('Failed to persist session history:', e.message);
+                            }
+                        }
+                        send({ type: 'done', mermaid, fixes, extracted });
+                    }
+                }, controller.signal);
+
+                if (!res.writableEnded) {
+                    res.write('data: [DONE]\n\n');
+                    res.end();
+                }
+            } catch (error) {
+                if (error && error.code === 'ABORTED') {
+                    // 客户端已断开，无需再写
+                    if (!res.writableEnded) res.end();
+                    return;
+                }
+                logger.error('Generate stream error:', error.message);
+                const resp = llmErrorResponse(error, 'Generation Failed');
+                send({ type: 'error', message: resp.message, hint: resp.hint });
+                if (!res.writableEnded) {
+                    res.write('data: [DONE]\n\n');
+                    res.end();
+                }
             }
         },
 

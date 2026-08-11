@@ -1,32 +1,22 @@
 /**
  * Main Application Logic
- * Handles user auth, API calls, history drawer, and state management.
+ * 负责鉴权、历史抽屉、状态栏、配置加载。聊天与生成逻辑见 chat.js。
  *
  * 登录态：token 存 localStorage('pd_token')，每次请求带 Authorization: Bearer。
- * 会话 id 仍在内存（state.sessionId），浏览器刷新后通过左侧抽屉从历史恢复。
+ * 会话 id 在内存 state.sessionId，首次生成前由 chat 触发 ensureSession 懒申请。
  */
 
 // State
 const state = {
-    mermaidCode: '',
-    history: [],
     theme: localStorage.getItem('theme') || 'dark',
-    zoom: 1,
-    isGenerating: false,
     user: null,
-    // In-memory only: 标识当前正在编辑的会话。null 表示尚未创建，首次生成时懒申请。
+    // In-memory only：当前会话 id。null 表示尚未创建，首次生成时懒申请。
     sessionId: null
 };
 
-// DOM Elements
+// DOM Elements（仅保留鉴权/抽屉/状态相关；聊天区元素归 chat.js 管理）
 const elements = {
-    inputPrompt: document.getElementById('input-prompt'),
-    codeEditor: document.getElementById('code-editor'),
-    btnGenerate: document.getElementById('btn-generate'),
-    btnClear: document.getElementById('btn-clear'),
-    btnCopy: document.getElementById('btn-copy'),
     statusText: document.getElementById('status-text'),
-    codeStatus: document.getElementById('code-status'),
     toastContainer: document.getElementById('toast-container'),
     apiConfig: document.getElementById('api-config'),
     // 登录遮罩
@@ -69,20 +59,12 @@ function showToast(message, type = 'info') {
     toast.className = `toast ${type}`;
     toast.textContent = message;
     elements.toastContainer.appendChild(toast);
-
-    setTimeout(() => {
-        toast.remove();
-    }, 4000);
+    setTimeout(() => toast.remove(), 4000);
 }
 
-// Update status
 function updateStatus(text, type = 'ready') {
     elements.statusText.textContent = text;
     elements.statusText.className = `status-${type}`;
-}
-
-function updateCodeStatus(text, type = 'ready') {
-    elements.codeStatus.textContent = text;
 }
 
 // ---- Auth helpers ---------------------------------------------------------
@@ -95,33 +77,25 @@ function setToken(token) {
     localStorage.setItem('pd_token', token);
 }
 
-function clearAuth({ keepInput = false } = {}) {
+function clearAuth() {
     localStorage.removeItem('pd_token');
     state.user = null;
     state.sessionId = null;
-    // 登录态失效/登出时清空输入框，避免跨用户残留——这是会话切换与用户/token 切换两条入口的共同汇聚点
-    // keepInput 例外：登录/注册表单的 401 不该把用户已写的草稿抹掉，由调用方显式传 keepInput=true
-    if (!keepInput) {
-        elements.inputPrompt.value = '';
-    }
+    if (window.chat) window.chat.clear();
 }
 
 /**
- * 统一的 fetch 封装：自动带 Bearer token；遇 401 清登录态并弹登录遮罩。
- * 用 401 作为“登录失效”的唯一信号，避免每个调用点重复处理。
- * keepInputOn401=true 时，401 路径不再清空 inputPrompt（用于登录/注册表单——用户可能只是
- * 输错密码，正在编辑的草稿应保留）。
+ * 统一 fetch 封装：自动带 Bearer token；遇 401 清登录态弹登录遮罩。
  */
 async function apiFetch(url, options = {}) {
-    const { keepInputOn401 = false, ...rest } = options;
     const token = getToken();
-    const headers = { 'Content-Type': 'application/json', ...(rest.headers || {}) };
+    const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
-    const res = await fetch(url, { ...rest, headers });
+    const res = await fetch(url, { ...options, headers });
     if (res.status === 401) {
-        clearAuth({ keepInput: keepInputOn401 });
+        clearAuth();
         showLoginMask();
         throw new Error('登录已失效，请重新登录');
     }
@@ -168,7 +142,6 @@ async function checkAuth() {
             showLoginMask();
         }
     } catch (e) {
-        // apiFetch 已对 401 弹了遮罩；网络错误也退回登录遮罩
         if (!elements.loginMask.hidden) return;
         showLoginMask();
     }
@@ -183,10 +156,8 @@ async function handleLogin(event) {
         return;
     }
     try {
-        // keepInputOn401=true：登录失败时不清草稿——输错密码不该抹掉用户已写的描述
         const res = await apiFetch('/api/auth/login', {
             method: 'POST',
-            keepInputOn401: true,
             body: JSON.stringify({ username, password })
         });
         const data = await res.json();
@@ -196,9 +167,7 @@ async function handleLogin(event) {
         }
         setToken(data.token);
         state.user = data.username;
-        // 防御性兜底：handleLogout 等其他入口已清空输入，但切换用户（尤其是先登出再登入、或共享浏览器场景）仍可能残留上一用户的 prompt/code——这里再清一次，杜绝跨用户串味
-        elements.inputPrompt.value = '';
-        elements.codeEditor.value = '';
+        if (window.chat) window.chat.clear();
         hideLoginMask();
         elements.userBadge.textContent = state.user;
         elements.loginForm.reset();
@@ -217,10 +186,8 @@ async function handleRegister(event) {
         return;
     }
     try {
-        // keepInputOn401=true：注册失败时不清草稿，与 handleLogin 语义对齐
         const res = await apiFetch('/api/auth/register', {
             method: 'POST',
-            keepInputOn401: true,
             body: JSON.stringify({ username, password })
         });
         const data = await res.json();
@@ -228,12 +195,9 @@ async function handleRegister(event) {
             elements.loginMessage.textContent = data.message || '注册失败';
             return;
         }
-        // 注册成功即签发 token，省去再登录一步
         setToken(data.token);
         state.user = data.username;
-        // 防御性兜底：注册也可能发生在 token 失效后的用户切换场景，清掉上一用户残留的 prompt/code，杜绝跨用户串味
-        elements.inputPrompt.value = '';
-        elements.codeEditor.value = '';
+        if (window.chat) window.chat.clear();
         hideLoginMask();
         elements.userBadge.textContent = state.user;
         elements.registerForm.reset();
@@ -247,22 +211,14 @@ async function handleLogout() {
     try {
         await apiFetch('/api/auth/logout', { method: 'POST' });
     } catch (e) {
-        // 即使网络失败也强制本地登出，避免卡在失效 token 上
+        // 即使网络失败也强制本地登出
     }
     clearAuth();
-    state.mermaidCode = '';
-    state.history = [];
-    state.sessionId = null;
-    elements.inputPrompt.value = '';
-    elements.codeEditor.value = '';
-    if (window.mermaidRender) {
-        window.mermaidRender.clear();
-    }
+    if (window.mermaidRender) window.mermaidRender.clear();
     elements.historyList.innerHTML = '<p class="drawer-empty">暂无历史会话</p>';
     closeDrawer();
     showLoginMask();
     updateStatus('已登出', 'ready');
-    updateCodeStatus('就绪', 'ready');
 }
 
 // ---- History drawer -------------------------------------------------------
@@ -272,7 +228,6 @@ function toggleDrawer() {
     elements.btnToggleDrawer.classList.toggle('active', open);
 }
 
-// 收起抽屉：显式移除 open（而非 toggle），避免在已收起时误触发打开
 function closeDrawer() {
     elements.drawer.classList.remove('open');
     elements.btnToggleDrawer.classList.remove('active');
@@ -286,7 +241,6 @@ async function loadSessions() {
             renderHistoryList(data.sessions || []);
         }
     } catch (e) {
-        // 加载失败不阻断主功能，仅提示
         console.error('Load sessions failed:', e);
     }
 }
@@ -297,24 +251,48 @@ function renderHistoryList(sessions) {
         return;
     }
     elements.historyList.innerHTML = '';
+
+    // 按 updatedAt 分组：今天 / 昨天 / 更早（纯渲染层，不动后端）
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const startOfYesterday = startOfToday.getTime() - 86400000;
+    const groups = { today: [], yesterday: [], earlier: [] };
     for (const s of sessions) {
-        const item = document.createElement('div');
-        item.className = 'history-item';
-        if (s.sessionId === state.sessionId) {
-            item.classList.add('active');
-        }
-        item.dataset.sessionId = s.sessionId;
-        const summary = document.createElement('div');
-        summary.className = 'history-summary';
-        summary.textContent = s.summary || '（空会话）';
-        const time = document.createElement('div');
-        time.className = 'history-time';
-        time.textContent = formatTime(s.updatedAt);
-        item.appendChild(summary);
-        item.appendChild(time);
-        item.addEventListener('click', () => restoreFromHistory(s.sessionId));
-        elements.historyList.appendChild(item);
+        if (s.updatedAt >= startOfToday.getTime()) groups.today.push(s);
+        else if (s.updatedAt >= startOfYesterday) groups.yesterday.push(s);
+        else groups.earlier.push(s);
     }
+    const labels = { today: '今天', yesterday: '昨天', earlier: '更早' };
+
+    for (const key of ['today', 'yesterday', 'earlier']) {
+        if (!groups[key].length) continue;
+        const header = document.createElement('div');
+        header.className = 'drawer-group-title';
+        header.textContent = labels[key];
+        elements.historyList.appendChild(header);
+        for (const s of groups[key]) {
+            elements.historyList.appendChild(buildHistoryItem(s));
+        }
+    }
+}
+
+function buildHistoryItem(s) {
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    if (s.sessionId === state.sessionId) {
+        item.classList.add('active');
+    }
+    item.dataset.sessionId = s.sessionId;
+    const summary = document.createElement('div');
+    summary.className = 'history-summary';
+    summary.textContent = s.summary || '（空会话）';
+    const time = document.createElement('div');
+    time.className = 'history-time';
+    time.textContent = formatTime(s.updatedAt);
+    item.appendChild(summary);
+    item.appendChild(time);
+    item.addEventListener('click', () => restoreFromHistory(s.sessionId));
+    return item;
 }
 
 function formatTime(ms) {
@@ -324,15 +302,12 @@ function formatTime(ms) {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-// 点击历史会话项：校验存在并恢复上一张图与当前 sessionId。
+// 点击历史会话项：校验存在并用后端净化的 history 重建完整聊天对话 + 渲染最后一张图。
 async function restoreFromHistory(sessionId) {
-    if (state.isGenerating) {
+    if (window.chat && window.chat.isStreaming) {
         showToast('生成中，请稍候', 'warning');
         return;
     }
-    // 切换会话一律清空输入框：上一会话的 prompt 不属于当前会话，跨会话残留会误导用户；放在早返回之前，让同会话重入也保持干净画布
-    elements.inputPrompt.value = '';
-    // 重复点 active 项不算切换会话：不动 sessionId/画布，避免覆盖用户当前会话的未提交内容
     if (state.sessionId === sessionId) return;
     try {
         const res = await apiFetch('/api/session/check', {
@@ -346,25 +321,13 @@ async function restoreFromHistory(sessionId) {
         }
         if (data.exists) {
             state.sessionId = data.sessionId;
-            // 切换会话一律清空输入框：上一会话的 prompt 不属于当前会话，不应跨会话残留
-            elements.inputPrompt.value = '';
-            if (data.lastMermaid) {
-                state.mermaidCode = data.lastMermaid;
-                elements.codeEditor.value = data.lastMermaid;
-                if (window.mermaidRender) {
-                    window.mermaidRender.render(data.lastMermaid);
-                }
-            } else {
-                // 会话存在但无图：清空画布，准备继续对话
-                state.mermaidCode = '';
-                elements.codeEditor.value = '';
-                if (window.mermaidRender) {
-                    window.mermaidRender.clear();
-                }
+            if (window.chat) {
+                // history 已在后端净化（extract+autoFix）；renderHistory 重建对话并
+                // 渲染最后一张图。空 history 时 renderHistory 内部 clear + 显示欢迎态。
+                window.chat.renderHistory(data.history || []);
             }
             renderHistoryListActive();
             updateStatus('已恢复会话', 'ready');
-            updateCodeStatus('已恢复', 'ready');
             showToast('已恢复会话', 'success');
         } else {
             showToast('未找到该会话，可能已过期', 'warning');
@@ -375,7 +338,6 @@ async function restoreFromHistory(sessionId) {
     }
 }
 
-// 仅刷新列表中的 active 高亮，不重新请求
 function renderHistoryListActive() {
     const items = elements.historyList.querySelectorAll('.history-item');
     items.forEach(item => {
@@ -383,37 +345,26 @@ function renderHistoryListActive() {
     });
 }
 
-// 开始新会话：清空当前编辑/预览，下次生成时 ensureSession 申请新 id。
+// 开始新会话：清空聊天区，下次生成时 ensureSession 申请新 id。
 function startNewSession() {
-    if (state.isGenerating) {
+    if (window.chat && window.chat.isStreaming) {
         showToast('生成中，请稍候', 'warning');
         return;
     }
     state.sessionId = null;
-    state.mermaidCode = '';
-    state.history = [];
-    elements.inputPrompt.value = '';
-    elements.codeEditor.value = '';
-    if (window.mermaidRender) {
-        window.mermaidRender.clear();
-    }
+    if (window.chat) window.chat.clear();
+    if (window.mermaidRender) window.mermaidRender.clear();
     renderHistoryListActive();
     updateStatus('就绪', 'ready');
-    updateCodeStatus('就绪', 'ready');
     showToast('已开始新会话', 'info');
 }
 
-// ---- Session & generation -------------------------------------------------
+// ---- Session -------------------------------------------------------------
 
-// Lazily create a session before the first generation. state.isGenerating
-// already blocks concurrent clicks, so this cannot race.
+// 首次生成前懒申请会话 id。chat.sendMessage 调用。
 async function ensureSession() {
     if (state.sessionId) return;
-
-    const response = await apiFetch('/api/session', {
-        method: 'POST'
-    });
-
+    const response = await apiFetch('/api/session', { method: 'POST' });
     const data = await response.json();
     if (!response.ok) {
         throw new Error(data.message || '会话创建失败');
@@ -421,128 +372,17 @@ async function ensureSession() {
     state.sessionId = data.sessionId;
 }
 
-// Generate flowchart
-async function generateFlowchart() {
-    const prompt = elements.inputPrompt.value.trim();
-
-    if (!prompt) {
-        showToast('请输入流程描述', 'warning');
-        return;
-    }
-
-    state.isGenerating = true;
-    elements.btnGenerate.disabled = true;
-    elements.btnGenerate.querySelector('.btn-text').style.display = 'none';
-    elements.btnGenerate.querySelector('.btn-loading').style.display = 'inline';
-
-    updateStatus('生成中...', 'loading');
-    updateCodeStatus('生成中...', 'loading');
-
-    let responseData = null;
-
-    try {
-        await ensureSession();
-
-        const response = await apiFetch('/api/generate', {
-            method: 'POST',
-            body: JSON.stringify({
-                prompt: prompt,
-                mermaid: state.mermaidCode || undefined,
-                sessionId: state.sessionId
-            })
-        });
-
-        const data = await response.json();
-        responseData = data;
-
-        if (!response.ok) {
-            throw new Error(data.message || '生成失败');
-        }
-
-        state.mermaidCode = data.mermaid;
-        state.history = data.history || [];
-
-        elements.codeEditor.value = data.mermaid;
-
-        updateStatus('生成成功', 'ready');
-        updateCodeStatus('已生成', 'ready');
-        showToast('流程图已生成', 'success');
-
-        if (window.mermaidRender) {
-            window.mermaidRender.render(data.mermaid);
-        }
-
-        // 生成后刷新抽屉：新会话/新轮次应出现在历史列表顶部
-        loadSessions();
-
-    } catch (error) {
-        console.error('Generation error:', error);
-        updateStatus('生成失败', 'error');
-        updateCodeStatus('错误', 'error');
-
-        const msg = error.message || '生成失败';
-        const hint = responseData?.hint || '';
-        showToast(hint ? `${msg}。${hint}` : msg, 'error');
-    } finally {
-        state.isGenerating = false;
-        elements.btnGenerate.disabled = false;
-        elements.btnGenerate.querySelector('.btn-text').style.display = 'inline';
-        elements.btnGenerate.querySelector('.btn-loading').style.display = 'none';
-    }
-}
-
-// Clear all
-function clearAll() {
-    elements.inputPrompt.value = '';
-    elements.codeEditor.value = '';
-    state.mermaidCode = '';
-    state.history = [];
-    updateStatus('已清空', 'ready');
-    updateCodeStatus('就绪', 'ready');
-
-    if (window.mermaidRender) {
-        window.mermaidRender.clear();
-    }
-}
-
-// Copy code
-async function copyCode() {
-    const code = elements.codeEditor.value;
-    if (!code) {
-        showToast('没有可复制的代码', 'warning');
-        return;
-    }
-
-    try {
-        await navigator.clipboard.writeText(code);
-        showToast('代码已复制到剪贴板', 'success');
-    } catch (error) {
-        showToast('复制失败', 'error');
-    }
-}
-
 function reinitMermaid() {
-    mermaid.initialize({
-        startOnLoad: false,
-        theme: state.theme === 'light' ? 'default' : 'dark',
-        securityLevel: 'loose',
-        flowchart: {
-            useMaxWidth: true,
-            htmlLabels: true
-        }
-    });
-
-    if (state.mermaidCode && window.mermaidRender) {
-        window.mermaidRender.render(state.mermaidCode);
+    initMermaid();
+    if (window.chat && window.chat.currentMermaid) {
+        window.chat.renderMermaid(window.chat.currentMermaid);
     }
 }
 
-// Load config from server
 async function loadConfig() {
     try {
         const response = await apiFetch('/api/config');
         const config = await response.json();
-
         if (config.llm?.model) {
             elements.apiConfig.textContent = `模型: ${config.llm.model}`;
         } else {
@@ -553,61 +393,21 @@ async function loadConfig() {
     }
 }
 
-// 登录后加载应用：配置 + 历史会话
 async function loadApp() {
     updateStatus('就绪', 'ready');
-    updateCodeStatus('就绪', 'ready');
     loadConfig();
     await loadSessions();
 }
 
-// Debounce function for code editor
-function debounce(func, wait) {
-    let timeout;
-    return function(...args) {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func.apply(this, args), wait);
-    };
-}
-
-// Handle code editor changes
-const handleCodeChange = debounce(() => {
-    const code = elements.codeEditor.value;
-    if (code && code !== state.mermaidCode) {
-        state.mermaidCode = code;
-        if (window.mermaidRender) {
-            window.mermaidRender.render(code);
-        }
-    }
-}, 600);
-
-// Keyboard shortcuts
+// Keyboard shortcuts（全局：Ctrl+K 新建会话）
 function handleKeydown(e) {
-    if (e.ctrlKey && e.key === 'Enter') {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
         e.preventDefault();
-        if (!state.isGenerating) {
-            generateFlowchart();
-        }
+        startNewSession();
     }
 }
 
-// Event Listeners
 function initEventListeners() {
-    elements.btnGenerate.addEventListener('click', generateFlowchart);
-    elements.btnClear.addEventListener('click', clearAll);
-    elements.btnCopy.addEventListener('click', copyCode);
-    elements.codeEditor.addEventListener('input', handleCodeChange);
-    document.addEventListener('keydown', handleKeydown);
-    elements.inputPrompt.addEventListener('keydown', (e) => {
-        if (e.ctrlKey && e.key === 'Enter') {
-            e.preventDefault();
-            if (!state.isGenerating) {
-                generateFlowchart();
-            }
-        }
-    });
-
-    // 登录/注册
     elements.loginForm.addEventListener('submit', handleLogin);
     elements.registerForm.addEventListener('submit', handleRegister);
     elements.loginTabs.forEach(tab => {
@@ -615,13 +415,13 @@ function initEventListeners() {
     });
     elements.btnLogout.addEventListener('click', handleLogout);
 
-    // 历史抽屉
     elements.btnToggleDrawer.addEventListener('click', toggleDrawer);
     elements.btnCloseDrawer.addEventListener('click', closeDrawer);
     elements.btnNewSession.addEventListener('click', startNewSession);
 
-    // 点击抽屉外部（主页面区域）自动收起：抽屉打开时，点击不在抽屉内、
-    // 也不在切换按钮上（切换按钮的点击交给 toggleDrawer 处理，避免开即关）。
+    document.addEventListener('keydown', handleKeydown);
+
+    // 点击抽屉外部收起
     document.addEventListener('click', (e) => {
         if (!elements.drawer.classList.contains('open')) return;
         if (elements.drawer.contains(e.target)) return;
@@ -630,24 +430,21 @@ function initEventListeners() {
     });
 }
 
-// Initialize app
 async function init() {
     initMermaid();
     initEventListeners();
-    // 先尝试恢复登录态；checkAuth 内部决定是进入应用还是弹登录遮罩
     await checkAuth();
 }
 
-// Start when DOM is ready
 document.addEventListener('DOMContentLoaded', init);
 
 window.app = {
     state,
-    generateFlowchart,
-    clearAll,
-    copyCode,
     showToast,
     updateStatus,
     reinitMermaid,
-    apiFetch
+    apiFetch,
+    ensureSession,
+    loadSessions,
+    showLoginMask
 };

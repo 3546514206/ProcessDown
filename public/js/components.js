@@ -48,8 +48,9 @@ const components = {
         btnZoomFit.addEventListener('click', () => this.zoomToFit());
         btnZoomReset.addEventListener('click', () => this.resetZoom());
 
-        // Mouse wheel zoom
+        // Mouse wheel zoom（代码模式下放行，让 code-view 原生滚动文本）
         this.previewArea.addEventListener('wheel', (e) => {
+            if (e.target.closest('.code-view')) return;
             e.preventDefault();
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
             this.zoom(delta);
@@ -114,6 +115,8 @@ const components = {
 
         this.previewArea.addEventListener('mousedown', (e) => {
             if (e.target.closest('.preview-controls')) return;
+            // 代码模式下不启动 pan，让用户正常选中文本
+            if (e.target.closest('.code-view')) return;
 
             isDragging = true;
             this.startX = e.clientX - this.translateX;
