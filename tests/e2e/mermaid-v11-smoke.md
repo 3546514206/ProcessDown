@@ -14,7 +14,7 @@
 >
 > **每节给出**：prompt 样例、期望 mermaid 输出、关键验证点（PASS/FAIL 标准）
 >
-> **不通过标准**：预览区显示 "Render Error" / SVG 节点缺失 / 中文乱码 / PNG 导出失败
+> **不通过标准**：预览区显示 "渲染失败" / SVG 节点缺失 / 中文乱码 / PNG 导出失败
 
 ---
 
@@ -521,7 +521,7 @@ gitGraph LR
     commit id: "x" &feature/y
 ```
 
-期望：预览区显示"Render Error" + 诊断提示（orientation + cherry-pick）。
+期望：预览区显示"渲染失败" + 诊断提示（orientation + cherry-pick）。
 **不通过标准**：v11 直接接受（说明 fix 函数该删了）→ 但 v11Compat 已确认仍拒绝，所以这里**必须失败才正常**。
 
 ### Case 5.11 — Requirement Diagram

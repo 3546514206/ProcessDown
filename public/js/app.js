@@ -42,9 +42,16 @@ const elements = {
 
 // Initialize Mermaid
 function initMermaid() {
+    // mermaid v11 只接受 base 主题名（dark/default/forest/neutral/base），
+    // state.theme='transparent' 是项目自定义的预览背景，不是 mermaid theme——
+    // 直接传 'transparent' 会让 mermaid 抛错，进而阻断 initEventListeners。
+    // 这里统一兜底：透明背景配 light mermaid 主题（白底更易读）。
+    const mermaidTheme = state.theme === 'light' || state.theme === 'transparent'
+        ? 'default'
+        : 'dark';
     mermaid.initialize({
         startOnLoad: false,
-        theme: state.theme === 'light' ? 'default' : 'dark',
+        theme: mermaidTheme,
         securityLevel: 'loose',
         flowchart: {
             useMaxWidth: true,
@@ -431,7 +438,15 @@ function initEventListeners() {
 }
 
 async function init() {
-    initMermaid();
+    // mermaid 初始化与按钮事件绑定解耦：之前 initMermaid 抛错时
+    // initEventListeners 不会跑，导致登录/登出/抽屉/Ctrl+K 全部失效。
+    // mermaid 失败不应让基础交互失效——把异常隔离在 try 里。
+    try {
+        initMermaid();
+    } catch (e) {
+        console.error('Mermaid init failed:', e);
+    }
+    // 按钮/表单监听必须无条件跑，是应用可用性的兜底
     initEventListeners();
     await checkAuth();
 }

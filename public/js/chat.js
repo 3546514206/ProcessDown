@@ -12,8 +12,7 @@
 const chat = {
     messages: [],          // [{role:'user'|'assistant', content, thinking?}]
     isStreaming: false,
-    currentMermaid: '',    // 最新一张图的 mermaid（供预览/代码/导出）
-    previewMode: 'preview',
+    currentMermaid: '',    // 最新一张图的 mermaid（供预览/导出）
     el: {},
     _abortController: null,
     _renderTimer: null,
@@ -26,14 +25,10 @@ const chat = {
             textarea: document.getElementById('chat-textarea'),
             send: document.getElementById('chat-send'),
             scrollBtn: document.getElementById('scroll-bottom-btn'),
-            tabPreview: document.getElementById('btn-tab-preview'),
-            tabCode: document.getElementById('btn-tab-code'),
-            codeView: document.getElementById('code-view'),
             status: document.getElementById('status-text')
         };
 
         this.bindInput();
-        this.bindTabs();
         this.bindScroll();
         this.bindExampleChips();
         this.showWelcome();
@@ -58,31 +53,6 @@ const chat = {
             if (this.isStreaming) this.stopGenerate();
             else this.sendMessage();
         });
-    },
-
-    // ---- 预览/代码 Tab ----
-    bindTabs() {
-        this.el.tabPreview.addEventListener('click', () => this.setPreviewMode('preview'));
-        this.el.tabCode.addEventListener('click', () => this.setPreviewMode('code'));
-    },
-
-    setPreviewMode(mode) {
-        this.previewMode = mode;
-        this.el.tabPreview.classList.toggle('active', mode === 'preview');
-        this.el.tabCode.classList.toggle('active', mode === 'code');
-        // preview-content 与 code-view 互斥显示
-        const previewContent = document.getElementById('preview-content');
-        if (mode === 'preview') {
-            previewContent.hidden = false;
-            this.el.codeView.hidden = true;
-        } else {
-            previewContent.hidden = true;
-            this.el.codeView.hidden = false;
-        }
-    },
-
-    updateCodeView(code) {
-        this.el.codeView.textContent = code || '';
     },
 
     // ---- 滚动 ----
@@ -194,9 +164,7 @@ const chat = {
         viewBtn.addEventListener('click', () => {
             if (root._mermaid) {
                 this.currentMermaid = root._mermaid;
-                this.updateCodeView(root._mermaid);
                 this.renderMermaid(root._mermaid);
-                this.setPreviewMode('preview');
             }
         });
         actionRow.appendChild(viewBtn);
@@ -335,7 +303,6 @@ const chat = {
         if (mermaid) {
             aiRefs.codePre.textContent = mermaid;
             this.currentMermaid = mermaid;
-            this.updateCodeView(mermaid);
             this.renderMermaid(mermaid);
         }
         this.messages.push({ role: 'assistant', content: mermaid || '' });
@@ -385,7 +352,6 @@ const chat = {
         }
         // 保留 welcome 与 scrollBtn，移除所有 .message
         this.el.messages.querySelectorAll('.message').forEach(m => m.remove());
-        this.updateCodeView('');
         if (window.mermaidRender) window.mermaidRender.clear();
         this.showWelcome();
     },
@@ -416,7 +382,6 @@ const chat = {
                 this.messages.push({ role: 'assistant', content: m.content || '' });
                 if (i === lastAssistantIdx && m.content) {
                     this.currentMermaid = m.content;
-                    this.updateCodeView(m.content);
                     this.renderMermaid(m.content);
                 }
             }

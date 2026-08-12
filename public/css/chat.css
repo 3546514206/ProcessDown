@@ -396,68 +396,6 @@
 }
 
 /* ========================================
-   Preview Tabs 预览/代码 Tab
-   ======================================== */
-
-.preview-tabs {
-    display: flex;
-    gap: 2px;
-    background: var(--bg-tertiary);
-    border-radius: 6px;
-    padding: 2px;
-}
-
-.preview-tab {
-    border: none;
-    background: transparent;
-    color: var(--text-secondary);
-    padding: 4px 12px;
-    font-size: 12px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.15s;
-}
-
-.preview-tab:hover {
-    color: var(--text-primary);
-}
-
-.preview-tab.active {
-    background: var(--accent-color);
-    color: #fff;
-}
-
-/* ========================================
-   Code View 代码模式视图
-   ======================================== */
-
-.code-view {
-    position: absolute;
-    inset: 0;
-    margin: 0;
-    padding: 16px;
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    font-family: ui-monospace, 'Cascadia Code', 'JetBrains Mono', Menlo, Monaco, monospace;
-    font-size: 13px;
-    line-height: 1.5;
-    overflow: auto;
-    white-space: pre;
-    /* preview-area 是 cursor:grab（供拖拽平移），代码视图是只读文本，改回默认光标 */
-    cursor: auto;
-}
-
-.code-view[hidden] {
-    display: none;
-}
-
-/* preview-content 与 code-view 互斥：[hidden] 显式 display:none
-   （HTML 默认 [hidden] 在部分 flex 上下文会被覆盖，这里兜底） */
-#preview-content[hidden] {
-    display: none;
-}
-
-/* ========================================
    Responsive
    ======================================== */
 

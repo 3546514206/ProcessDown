@@ -60,7 +60,9 @@ body {
 
 .logo {
     display: flex;
-    align-items: baseline;
+    /* 水平居中对齐：避免 h1（20px）与 .support-info（12px）在 baseline 对齐下
+       错位被误读为两行；二者字号差距大，center 对齐后视觉上是同一行。 */
+    align-items: center;
     gap: 10px;
     overflow: hidden;
     min-width: 0;

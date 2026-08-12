@@ -57,10 +57,10 @@ const mermaidRender = {
 
             const commonHints = [];
             if (/emoji|got\s+'\\u/i.test(error.message)) {
-                commonHints.push('Tip: The code may contain emoji characters. Try regenerating or removing emojis from the code.');
+                commonHints.push('提示：代码里可能混入了表情符号，请重新生成或在聊天框的"Mermaid 代码"折叠面板里删除表情。');
             }
             if (/got\s+'\d+'/i.test(error.message)) {
-                commonHints.push('Tip: There may be special characters (emoji, Chinese punctuation) confusing the parser. Check the code editor for issues.');
+                commonHints.push('提示：可能存在表情符号或中文标点等特殊字符干扰解析器，请检查聊天框里的"Mermaid 代码"折叠面板。');
             }
 
             // gitGraph 专属错误诊断：仅当当前代码确实含 `gitGraph` 头部时提示，
@@ -86,10 +86,10 @@ const mermaidRender = {
                 : '';
 
             this.container.innerHTML = `<div class="render-error">
-                <p class="error-title">Render Error: ${error.message ? error.message.split('\n')[0] : 'Unknown error'}</p>
+                <p class="error-title">渲染失败：${error.message ? error.message.split('\n')[0] : '未知错误，请稍后重试'}</p>
                 ${errorLine}
                 ${hintsHtml}
-                <p class="error-action">You can edit the Mermaid code in the editor below to fix syntax issues, or click "Generate" again to regenerate.</p>
+                <p class="error-action">点击聊天框下方的"重新生成"重试一次，或调整描述后再次发送。</p>
             </div>`;
         }
     },

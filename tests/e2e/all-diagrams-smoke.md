@@ -14,8 +14,8 @@
 > 4. 把每节的 mermaid 代码贴到代码编辑器（600ms 防抖后自动重渲染）
 > 5. 验证：预览区有 SVG + 节点/边正确显示 + 点击"导出 PNG"得到非空 PNG
 >
-> **PASS 标准**：预览区显示 SVG，节点/边/文字正确，无 "Render Error"。
-> **FAIL 标准**：预览区显示 "Render Error" / SVG 节点缺失 / 中文乱码 / PNG 导出失败。
+> **PASS 标准**：预览区显示 SVG，节点/边/文字正确，无 "渲染失败"。
+> **FAIL 标准**：预览区显示 "渲染失败" / SVG 节点缺失 / 中文乱码 / PNG 导出失败。
 >
 > **sandbox 限制图标记**：[BLK] = 单元测试中 sandbox-blocked，**必须浏览器验证**。
 
@@ -143,7 +143,7 @@ block
 ```
 
 - [ ] 3 列布局 + 3 个嵌套 block
-- [ ] bare `block` 关键字被接受（无 Render Error）
+- [ ] bare `block` 关键字被接受（无"渲染失败"）
 
 ### 8. Packet [bare 形式，去 -beta]
 

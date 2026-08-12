@@ -35,7 +35,7 @@ gitGraph LR
 ```
 
 **期望**：
-- 预览区显示 "Render Error: ..."
+- 预览区显示 "渲染失败：..."
 - 错误提示行下有诊断 "gitGraph 头部方向关键字（LR / TB / RL / BT）是 Mermaid v10.3.0+ 特性，本项目 vendored 解析器不接受..."
 - 错误行号显示 1（v11 错误信息 "Parse error on line 1, column 10"）
 

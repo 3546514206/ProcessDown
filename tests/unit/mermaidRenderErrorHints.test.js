@@ -171,11 +171,11 @@ describe('mermaid-render.js error-diagnosis regex coverage', () => {
 
         const code = 'flowchart TD\n    A[开始] --> B';
         const htmlV9Style = await renderAndCapture(code, v9StyleEmojiErr);
-        assert.match(htmlV9Style, /emoji characters/,
+        assert.match(htmlV9Style, /表情/,
             'v9-style error (with \\u) still hits - historical compat insurance');
 
         const htmlV11 = await renderAndCapture(code, v11ActualEmojiErr);
-        assert.doesNotMatch(htmlV11, /emoji characters/,
+        assert.doesNotMatch(htmlV11, /表情/,
             'v11 error format has no \\u -> emoji diagnosis silently fails (v9-era regex)');
     });
 
@@ -185,11 +185,11 @@ describe('mermaid-render.js error-diagnosis regex coverage', () => {
 
         const code = 'flowchart TD\n    A-->B';
         const htmlV9 = await renderAndCapture(code, v9DigitErr);
-        assert.match(htmlV9, /special characters/,
+        assert.match(htmlV9, /特殊字符/,
             'v9 numeric token style still hits - historical compat insurance');
 
         const htmlV11 = await renderAndCapture(code, v11KeywordErr);
-        assert.doesNotMatch(htmlV11, /special characters/,
+        assert.doesNotMatch(htmlV11, /特殊字符/,
             "v11 keyword token format: numeric token regex never hits (v9-era regex)");
     });
 
