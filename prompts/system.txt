@@ -109,6 +109,7 @@
    - 错误：`A["Array[0] 值"]`
    - 正确：`A["Array(0) 值"]` 或 `A["Array&lbrack;0&rbrack; 值"]`
 10. **标签内双引号**：节点文本若需包含双引号，统一替换为 `&quot;` 或单引号（`'...'`），不要在双引号包裹内直接写裸 `"`
+11. **实体引用先定义后使用**：在 `gitGraph`（分支）、`stateDiagram-v2`（状态）等具备分支/状态跳转逻辑的图表中，任何切换（`checkout`）、合并（`merge`）或关联的目标，必须是已经显式创建或系统默认内置（如 `main` 分支、`[*]` 状态）的有效标识符；严禁引用未声明的分支名或状态名
 
 ## 图表质量与丰满度指引
 
@@ -325,6 +326,7 @@
 - `checkout develop` / `merge develop [id: "x"] [tag: "y"] [type: REVERSE]`
 - `cherry-pick id: "commitId" [parent: "parentId"]`（独立关键字，不要用 `&branch`；**cherry-pick 一个 merge commit 时必须带 `parent:` 指定父提交**，否则报错）
 - frontmatter config：`gitGraph: showBranches`/`showCommitLabel`/`mainBranchName`/`parallelCommits`
+- **主分支命名约束**：Mermaid 默认初始主分支名为 `main`。在未通过 Frontmatter 显式配置 `mainBranchName: "master"` 的情况下，严禁直接执行 `checkout master` 或 `merge master`；所有对默认主分支的操作必须统一使用 `main`（oracle 实测：未声明的 master 分支 checkout 会触发 `Trying to checkout branch which is not yet created` 报错）
 
 ## 禁止写法清单（oracle 实测会语法报错，绝对不要输出）
 
@@ -344,6 +346,7 @@
 14. **sequenceDiagram 激活符与冒号之间加空格**：`A->>+B : msg` -> 必须 `A->>+B: msg`（激活符紧贴箭头，冒号紧贴消息）
 15. **flowchart 直接链接到子图 ID**：`A --> subgraph_id`（部分渲染器不兼容）-> 必须链接到子图内部的具体节点，如 `A --> B_inside_subgraph`
 16. **stateDiagram-v2 Note 多行/单行混用**：单行 Note 必须 `note left of S1 : 文本`；多行 Note 必须 `note left of S1\n多行内容\nend note` 闭合。两种格式严禁混用同一 Note 块
+17. **gitGraph 隐式切换未声明分支**：未配置 `mainBranchName` 就直接 `checkout master`/`merge master` -> 默认主分支为 `main`，切换未定义分支直接引发 `Trying to checkout branch which is not yet created` 报错
 
 ## 不推荐写法（能解析但应避免）
 
