@@ -107,6 +107,57 @@ class SessionStore {
             : entries;
         fs.writeFileSync(this.historyPath(sessionId), JSON.stringify(trimmed, null, 2));
     }
+
+    diagramPath(sessionId) {
+        return path.join(this.dir, sessionId, 'diagram.json');
+    }
+
+    /**
+     * Persist the current canonical Mermaid for a session. Parallel to history.json:
+     * history.json is the immutable audit trail of every round, diagram.json is the
+     * editable overlay (whether LLM- or human-edited) that restore should prefer.
+     * Saves are unconditional - the call sites have already validated sessionId via
+     * isValidId, and the input code via the route validator.
+     */
+    saveDiagram(sessionId, code) {
+        const filePath = this.diagramPath(sessionId);
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        // 先写临时文件再 rename：rename 在同一文件系统内是原子的，进程在写一半时
+        // 被 kill 只会留下 .tmp 垃圾，而不会让 diagram.json 半截损坏——损坏会让
+        // readDiagram 备份并回退到未编辑的 history，用户的编辑无声丢失
+        const tmpPath = `${filePath}.tmp-${process.pid}`;
+        fs.writeFileSync(tmpPath, JSON.stringify({ code, ts: Date.now() }));
+        fs.renameSync(tmpPath, filePath);
+    }
+
+    /**
+     * Read the canonical diagram if one exists. Returns null on miss OR on a corrupt
+     * file (after backing it up to <file>.corrupt-<ts>, mirroring _loadRaw's recovery
+     * path so a bad diagram.json never wedges checkSession). Returns null for an
+     * invalid sessionId so callers can chain through to the history fallback.
+     */
+    readDiagram(sessionId) {
+        if (!this.isValidId(sessionId)) return null;
+        const filePath = this.diagramPath(sessionId);
+        if (!fs.existsSync(filePath)) return null;
+        try {
+            const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            if (!parsed || typeof parsed.code !== 'string') {
+                throw new Error('diagram.json missing string code field');
+            }
+            return parsed;
+        } catch (e) {
+            // _loadRaw 在损坏文件上做同样的备份，让 checkSession 回退到 history
+            // 派生路径，同时保留原始字节供取证
+            try {
+                fs.renameSync(filePath, `${filePath}.corrupt-${Date.now()}`);
+                logger.warn('Corrupted diagram.json backed up, falling back to history:', filePath);
+            } catch (backupErr) {
+                logger.warn('Could not back up corrupted diagram.json:', filePath, backupErr.message);
+            }
+            return null;
+        }
+    }
 }
 
 /**

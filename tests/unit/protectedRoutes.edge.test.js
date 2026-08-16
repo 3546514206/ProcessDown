@@ -121,6 +121,33 @@ describe('R2-1: /api/export/png and /api/regenerate are protected by authUser', 
         assert.ok(protectedRoutes.has('/api/regenerate'), '/api/regenerate must be protected');
     });
 
+    // diagram 路径含 :id 动态段，Set 无法承载，对应 PROTECTED_USER_ROUTE_PATTERNS 正则列表。
+    // 这里直接对源文本做断言，保证正则始终覆盖 /api/session/:id/diagram。
+    // 必须跳过注释里第一次出现的 PROTECTED_USER_ROUTE_PATTERNS，定位到 const 声明的 [。
+    // 按数组字面量的中括号闭合进行栈式扫描，避开嵌套 /.../ 字面量
+    it('PROTECTED_USER_ROUTE_PATTERNS covers /api/session/:id/diagram (wiring pinned to source)', () => {
+        const src = fs.readFileSync(path.join(__dirname, '../../src/server/index.js'), 'utf-8');
+        const start = src.indexOf('const PROTECTED_USER_ROUTE_PATTERNS');
+        assert.ok(start >= 0, 'PROTECTED_USER_ROUTE_PATTERNS declaration not found');
+        const open = src.indexOf('[', start);
+        assert.ok(open >= 0, 'opening [ not found');
+        let depth = 0;
+        let close = -1;
+        for (let i = open; i < src.length; i++) {
+            if (src[i] === '[') depth++;
+            else if (src[i] === ']') {
+                depth--;
+                if (depth === 0) { close = i; break; }
+            }
+        }
+        assert.ok(close > open, 'matching ] not found');
+        const block = src.slice(open, close + 1);
+        // block 是形如 "[\n    /^\/api\/session\/[^/]+\/diagram$/\n]" 的文本。源里的
+        // 字面量 `[^/]+` 含 `/`，与 assert.match 的正则 `[^/]+` 互相吞噬，故改用子串包含
+        assert.ok(block.includes('/api/session/[^/]+/diagram') || block.includes('\\/api\\/session\\/[^/]+\\/diagram'),
+            'diagram route regex pattern must be present in the protected list');
+    });
+
     it('returns 401 for /api/export/png with no Bearer token (handler not reached)', async () => {
         const res = mockRes();
         await dispatch('/api/export/png', mockReq('POST', { body: {} }), res);

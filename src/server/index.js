@@ -42,6 +42,8 @@ const api = createApiRouter(config);
 // API-Key 仍作用于全部 /api/（health 与 /api/auth/* 除外），本层在此基础上
 // 要求用户登录态。regenerate/export/png 同属“画图”语义，纳入保护以闭合
 // 需求 2（否则默认部署下可被 curl 白嫖 LLM 或打 CPU）。
+// 路径形如 /api/session/:id/diagram 含动态段，Set 无法承载，下方 PROTECTED_USER_ROUTE_PATTERNS
+// 用正则匹配；二者并列存在，dispatch 时两类都查
 const PROTECTED_USER_ROUTES = new Set([
     '/api/generate',
     '/api/generate/stream',
@@ -53,6 +55,11 @@ const PROTECTED_USER_ROUTES = new Set([
     '/api/auth/me',
     '/api/auth/logout'
 ]);
+
+// 形参化的保护路由（仅此一处用正则，避免给整条 dispatch 引入额外开销）
+const PROTECTED_USER_ROUTE_PATTERNS = [
+    /^\/api\/session\/[^/]+\/diagram$/
+];
 
 // MIME types for static files
 const MIME_TYPES = {
@@ -171,8 +178,10 @@ const server = http.createServer(async (req, res) => {
 
         // Route handling
         if (req.url.startsWith('/api/')) {
-            // Parse JSON body for POST requests
-            if (req.method === 'POST') {
+            // Parse JSON body for POST/PATCH requests。PATCH 必须在列：
+            // PATCH /api/session/:id/diagram 的 body 才是编辑内容本体，
+            // 漏掉它会让 patchDiagram 永远看到 req.body === undefined 而 400
+            if (req.method === 'POST' || req.method === 'PATCH') {
                 try {
                     req.body = await parseBody(req);
                 } catch (e) {
@@ -189,7 +198,9 @@ const server = http.createServer(async (req, res) => {
             // API routing
             // 受保护路由先过用户登录态鉴权：失败则 authUser 已同步 res.end()，
             // headersSent 为真，这里直接 return，不会落到 switch。
-            if (PROTECTED_USER_ROUTES.has(parsedUrl.pathname)) {
+            const isProtected = PROTECTED_USER_ROUTES.has(parsedUrl.pathname)
+                || PROTECTED_USER_ROUTE_PATTERNS.some(re => re.test(parsedUrl.pathname));
+            if (isProtected) {
                 authUser(req, res, () => {});
                 if (res.headersSent) return;
             }
@@ -248,6 +259,13 @@ const server = http.createServer(async (req, res) => {
                     break;
 
                 default:
+                    // 形参化的 PATCH /api/session/:id/diagram 在 PROTECTED_USER_ROUTE_PATTERNS
+                    // 已走 authUser 守卫；switch 走完所有字面量都没命中时在这里 dispatch，
+                    // 避免再开一个 regex 形 switch-case
+                    if (/^\/api\/session\/[^/]+\/diagram$/.test(parsedUrl.pathname) && req.method === 'PATCH') {
+                        await api.patchDiagram(req, res);
+                        return;
+                    }
                     res.writeHead(404, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ error: 'Not Found' }));
             }

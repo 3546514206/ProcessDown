@@ -85,6 +85,11 @@ function setToken(token) {
 }
 
 function clearAuth() {
+    // 登出前 flush：把当前会话任何待保存的编辑立即 PATCH 到 diagram.json，
+    // 避免 token 失效/被清后本地编辑丢失。失败 best-effort 不影响登出流程
+    if (window.chat && window.chat._flushPendingDiagramSave) {
+        window.chat._flushPendingDiagramSave();
+    }
     localStorage.removeItem('pd_token');
     state.user = null;
     state.sessionId = null;
@@ -316,6 +321,12 @@ async function restoreFromHistory(sessionId) {
         return;
     }
     if (state.sessionId === sessionId) return;
+    // 切会话前 flush：把当前会话任何待保存的编辑立即 PATCH 到 diagram.json，
+    // 再切 state.sessionId，否则新会话的 input 事件会被旧 sessionId 污染。
+    // 失败 best-effort（失败场景：下一轮 generate 会覆盖 diagram.json，审计轨迹不受影响）
+    if (window.chat && window.chat._flushPendingDiagramSave) {
+        window.chat._flushPendingDiagramSave();
+    }
     try {
         const res = await apiFetch('/api/session/check', {
             method: 'POST',
@@ -329,9 +340,10 @@ async function restoreFromHistory(sessionId) {
         if (data.exists) {
             state.sessionId = data.sessionId;
             if (window.chat) {
-                // history 已在后端净化（extract+autoFix）；renderHistory 重建对话并
-                // 渲染最后一张图。空 history 时 renderHistory 内部 clear + 显示欢迎态。
-                window.chat.renderHistory(data.history || []);
+                // history 已在后端净化（extract+autoFix）；lastMermaid 是 diagram.json
+                // 优先派生的"当前图"（含用户编辑），必须传给 renderHistory，否则用户的
+                // 编辑在恢复时会被 history 里的 LLM 原文覆盖
+                window.chat.renderHistory(data.history || [], data.lastMermaid);
             }
             renderHistoryListActive();
             updateStatus('已恢复会话', 'ready');
@@ -357,6 +369,10 @@ function startNewSession() {
     if (window.chat && window.chat.isStreaming) {
         showToast('生成中，请稍候', 'warning');
         return;
+    }
+    // flush：保留当前会话任何未落盘的编辑
+    if (window.chat && window.chat._flushPendingDiagramSave) {
+        window.chat._flushPendingDiagramSave();
     }
     state.sessionId = null;
     if (window.chat) window.chat.clear();

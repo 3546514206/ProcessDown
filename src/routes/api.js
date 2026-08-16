@@ -219,38 +219,137 @@ function createRouter(config) {
                 return;
             }
 
-            const exists = sessionStore.exists(sessionId);
+            const historyExists = sessionStore.exists(sessionId);
+            // 先读 diagram.json：diagram-only 的会话（PATCH 先于首次 /api/generate 落盘——
+            // 流式 onDone 尚未 append 时用户已在改代码）也得被认作"存在"，否则恢复路径
+            // 走 exists=false → "未找到该会话"，用户的编辑无声丢失。readDiagram 在缺失
+            // 或损坏时返回 null，不抛
+            const diagram = sessionStore.readDiagram(sessionId);
+            const exists = historyExists || !!diagram;
 
             let lastMermaid = null;
             let history = null;
             if (exists) {
-                history = sessionStore.readHistory(sessionId);
-                // 旧会话里残留的不兼容写法（如 gitGraph LR:，早于 extractor 某次增强）
-                // 会让前端 mermaid.render 失败。对每条 assistant content 跑 extract+autoFix，
-                // 与 generate 链路保持单一真源--前端 renderHistory 渲染的是净化后的内容
-                // （此前只净化 lastMermaid，但前端走 history 分支，净化未到达渲染路径）。
-                // 不写盘：checkSession 只读，仅净化返回值。extract 对非 mermaid 内容返回
-                // null 时保留原文，避免丢数据。frontmatter 不剥离（bundle 11.16.1 原生支持）。
-                history = history.map(h => {
-                    if (h.role === 'assistant' && h.content) {
-                        const extracted = extractMermaidCode(h.content);
-                        if (extracted) return { ...h, content: autoFixMermaidCode(extracted).code };
-                    }
-                    return h;
-                });
-                for (let i = history.length - 1; i >= 0; i--) {
-                    if (history[i].role === 'assistant') {
-                        lastMermaid = history[i].content;
-                        break;
+                if (historyExists) {
+                    history = sessionStore.readHistory(sessionId);
+                    // 旧会话里残留的不兼容写法（如 gitGraph LR:，早于 extractor 某次增强）
+                    // 会让前端 mermaid.render 失败。对每条 assistant content 跑 extract+autoFix，
+                    // 与 generate 链路保持单一真源--前端 renderHistory 渲染的是净化后的内容
+                    // （此前只净化 lastMermaid，但前端走 history 分支，净化未到达渲染路径）。
+                    // 不写盘：checkSession 只读，仅净化返回值。extract 对非 mermaid 内容返回
+                    // null 时保留原文，避免丢数据。frontmatter 不剥离（bundle 11.16.1 原生支持）。
+                    history = history.map(h => {
+                        if (h.role === 'assistant' && h.content) {
+                            const extracted = extractMermaidCode(h.content);
+                            if (extracted) return { ...h, content: autoFixMermaidCode(extracted).code };
+                        }
+                        return h;
+                    });
+                }
+                // diagram.json 是可编辑覆盖层（LLM 或人工编辑），优先于 history 的最后一条
+                // assistant content。typeof === 'string' 而非 truthy：保留空串的"清空覆盖层"
+                // 语义，否则 PATCH { code: '' } 在恢复时被 falsy 短路退回到 history，覆盖
+                // 层的清空动作对用户不可见
+                if (diagram && typeof diagram.code === 'string') {
+                    lastMermaid = diagram.code;
+                } else if (history) {
+                    for (let i = history.length - 1; i >= 0; i--) {
+                        if (history[i].role === 'assistant') {
+                            lastMermaid = history[i].content;
+                            break;
+                        }
                     }
                 }
             }
 
             // history 已被 readHistory 截断到 maxHistory（默认 20 条=10 轮），
             // 供前端 renderHistory 重建完整对话；体积受 maxHistory 约束。
-            // lastMermaid 从净化后的 history 派生，无需再单独 extract+autoFix。
+            // lastMermaid 从 diagram.json 派生（用户编辑优先），否则从净化后的 history 派生，
+            // 无需再单独 extract+autoFix。
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ success: true, exists, sessionId, lastMermaid, history }));
+        },
+
+        /**
+         * PATCH /api/session/:id/diagram
+         * 写入"当前规范图表"覆盖层。前端用户在 AI 消息的代码 textarea 里手动改完后
+         * 触发（带 600ms 防抖）。仅写 diagram.json，history.json 不动--那是审计轨迹，
+         * 任何一方的内容都不应被客户端编辑悄然改写。isValidId 守卫保证 id 不会越权访问
+         * 其他用户的会话目录，code 必须是字符串且长度有上界。
+         */
+        patchDiagram(req, res) {
+            if (req.method !== 'PATCH') {
+                res.writeHead(405, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Method Not Allowed',
+                    message: 'Use PATCH to update the diagram'
+                }));
+                return;
+            }
+
+            // 生产路径上 server/index.js 的 /^\/api\/session\/[^/]+\/diagram$/ 已经卡过一次
+            // 形状，下面这段 4 段校验只有直接调 handler 时（单测、将来新增的调用点）才可能
+            // 命中。保留它是廉价的纵深防御：handler 单独看也不会把 pathParts[2] 当成
+            // undefined 一路传给 isValidId
+            const pathParts = req.url.split('?')[0].split('/').filter(Boolean);
+            // /api/session/<id>/diagram -> 期望 4 段
+            if (pathParts.length !== 4 || pathParts[0] !== 'api' || pathParts[1] !== 'session' || pathParts[3] !== 'diagram') {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Not Found' }));
+                return;
+            }
+            const sessionId = pathParts[2];
+            const body = req.body || {};
+
+            const sessionStore = sessionStoreFor(req);
+            if (!sessionStore.isValidId(sessionId)) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Validation Error',
+                    message: 'Invalid sessionId format'
+                }));
+                return;
+            }
+
+            if (typeof body.code !== 'string') {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Validation Error',
+                    message: '"code" must be a string'
+                }));
+                return;
+            }
+
+            // 200KB 与 mermaid 源码实际体积对齐：超过此值基本可断为异常输入。
+            // 历史保留更宽（maxHistory 20 条≈几百 KB），单图覆盖层不需要那么宽。
+            if (body.code.length > 200000) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Validation Error',
+                    message: '"code" exceeds maximum size of 200KB'
+                }));
+                return;
+            }
+
+            try {
+                // 注意：saveDiagram 内的 mkdirSync(recursive) 会真的建出
+                // run/users/<u>/sessions/<id>/，所以对一个从未生成过的合法 uuid 发 PATCH
+                // 也会落下一个只含 diagram.json 的目录。这不是漏洞，只是与 POST /api/session
+                // 同一档的"已登录用户自污染"：username 白名单 + isValidId 已把写入死锁在
+                // 该用户自己的 sessions/ 下，越权与路径穿越都不可能。
+                // 之所以不加"会话必须已存在"的前置校验：编辑先于首次落盘的时序是合法的
+                // （流式 onDone 尚未 append，用户已在改代码），拦下来会丢用户的编辑。
+                sessionStore.saveDiagram(sessionId, body.code);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ success: true, sessionId, savedAt: Date.now() }));
+            } catch (e) {
+                logger.error('Save diagram error:', e.message);
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({
+                    error: 'Save Failed',
+                    message: e.message
+                }));
+            }
         },
 
         /**
@@ -305,6 +404,10 @@ function createRouter(config) {
                 if (sessionStore) {
                     try {
                         sessionStore.append(sessionId, prompt, generatedCode);
+                        // diagram.json 与 history.json 并行：history 是审计轨迹，diagram 是
+                        // 当前规范图表（LLM 或人工编辑）。两边都写保证 checkSession 后续能
+                        // 从 diagram 派生出 lastMermaid
+                        sessionStore.saveDiagram(sessionId, generatedCode);
                         responseHistory = sessionStore.readHistory(sessionId).slice(-10);
                     } catch (e) {
                         // The diagram is already generated; a failed disk write
@@ -383,6 +486,9 @@ function createRouter(config) {
                         if (sessionStore) {
                             try {
                                 sessionStore.append(sessionId, prompt, mermaid);
+                                // 与 /api/generate 同源：diagram.json 让用户在流式结束后
+                                // 直接编辑覆盖，无需等到下一轮生成
+                                sessionStore.saveDiagram(sessionId, mermaid);
                             } catch (e) {
                                 logger.error('Failed to persist session history:', e.message);
                             }

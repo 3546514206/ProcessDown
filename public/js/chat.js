@@ -17,6 +17,9 @@ const chat = {
     _abortController: null,
     _renderTimer: null,
     _thinkStartTime: 0,
+    _activeCodePre: null,  // 当前流式中那条 AI 消息的 <textarea> 引用，setStreaming(true) 时上锁
+    _diagramSaveTimer: null,
+    _diagramSavePending: null,  // {sessionId, code} - 节流的待保存草稿
 
     init() {
         this.el = {
@@ -32,6 +35,9 @@ const chat = {
         this.bindScroll();
         this.bindExampleChips();
         this.showWelcome();
+        // 启动即排空待重发队列：否则上次会话遗留的失败保存要等用户下一次编辑
+        // （_dispatchDiagramSave 内部才会 drain）才有机会重发
+        this._drainPendingSaves();
     },
 
     // ---- 输入框 ----
@@ -114,10 +120,13 @@ const chat = {
      * 追加一条 AI 消息骨架，返回各部位引用供流式更新。
      * 结构：think-block(可选) + code-details(<details>) + action-row + stream-caret
      */
-    appendAiMessage() {
+    appendAiMessage(roundPrompt) {
         this.hideWelcome();
         const root = document.createElement('div');
         root.className = 'message message-ai';
+        // 该轮对应的 user 指令，供"重新生成"使用：按钮是 per-round 的可供性，
+        // 必须重放本轮指令，而不是全局最后一条 user 消息
+        root._prompt = roundPrompt || '';
 
         // 思考块（默认隐藏，有 thinking 内容时显示）
         const thinkBlock = document.createElement('div');
@@ -147,8 +156,15 @@ const chat = {
             this.copyText(this.currentMermaid);
         });
         summary.appendChild(copyBtn);
-        const codePre = document.createElement('pre');
+        // 代码面板用 <textarea> 而非 <pre>：原生支持光标/选择/粘贴/撤销/移动键盘，
+        // readonly 属性作为唯一的"编辑门"——浏览器本身就是守卫，无需 JS 状态机。
+        // 流式期间 readOnly=true 防用户误编辑；finalize/clearAuth 时移除
+        const codePre = document.createElement('textarea');
         codePre.className = 'code-pre';
+        codePre.readOnly = true;
+        codePre.spellcheck = false;
+        codePre.wrap = 'off';
+        codePre.addEventListener('input', () => this._onCodeEdited(codePre));
         details.appendChild(summary);
         details.appendChild(codePre);
 
@@ -157,14 +173,18 @@ const chat = {
         actionRow.className = 'action-row';
         actionRow.style.display = 'none';
 
-        // 查看此图：把该轮 mermaid 渲染到预览区（历史消息切换）
+        // 查看此图：把该轮 mermaid 渲染到预览区（历史消息切换）。
+        // 读 codePre.value 而非 root._mermaid：用户编辑后 textarea 才是所见即所得的
+        // 真源，_mermaid 是未编辑的 LLM 原始输出，回落只在 value 为空时（如中断轮）
+        const liveCode = () => (codePre.value || root._mermaid || '');
         const viewBtn = document.createElement('button');
         viewBtn.className = 'action-btn';
         viewBtn.textContent = '查看此图';
         viewBtn.addEventListener('click', () => {
-            if (root._mermaid) {
-                this.currentMermaid = root._mermaid;
-                this.renderMermaid(root._mermaid);
+            const code = liveCode();
+            if (code) {
+                this.currentMermaid = code;
+                this.renderMermaid(code);
             }
         });
         actionRow.appendChild(viewBtn);
@@ -172,17 +192,22 @@ const chat = {
         const copyCodeBtn = document.createElement('button');
         copyCodeBtn.className = 'action-btn';
         copyCodeBtn.textContent = '复制代码';
-        copyCodeBtn.addEventListener('click', () => this.copyText(root._mermaid || ''));
+        // 同样读 liveCode：中断轮 _mermaid 为空但 textarea 里有已流式累积的内容，
+        // 复制空串会让按钮说谎（toast 提示已复制，剪贴板却是空的）
+        copyCodeBtn.addEventListener('click', () => this.copyText(liveCode()));
         actionRow.appendChild(copyCodeBtn);
 
         const regenBtn = document.createElement('button');
         regenBtn.className = 'action-btn';
         regenBtn.textContent = '重新生成';
         regenBtn.addEventListener('click', () => {
-            // 用上一条 user 指令重新生成
-            const lastUser = [...this.messages].reverse().find(m => m.role === 'user');
-            if (lastUser) {
-                this.el.textarea.value = lastUser.content;
+            // 用本轮的 user 指令重新生成；缺失（老 DOM/异常）时回落到最后一条 user
+            const prompt = root._prompt
+                || (([...this.messages].reverse().find(m => m.role === 'user') || {}).content);
+            if (prompt) {
+                this.el.textarea.value = prompt;
+                // 种子图也用本轮的：否则会拿预览区里别的轮次的图当上下文
+                this.currentMermaid = liveCode();
                 this.sendMessage();
             }
         });
@@ -208,12 +233,22 @@ const chat = {
         if (!prompt) return;
 
         this.appendUserMessage(prompt);
+        // 新一轮开始前先 flush 上一轮的挂起 PATCH：flow 是 _onCodeEdited -> 600ms 防抖 ->
+        // _dispatchDiagramSave。旧轮编辑晚于本轮 sendMessage 但早于 600ms 时，timer
+        // 仍挂起；不 flush 的话本轮 finalizeAiMessage + 服务端 saveDiagram 写完新 LLM
+        // 输出后，那个迟来的 PATCH 会用旧轮编辑覆盖 diagram.json，新一轮的图被静默顶掉
+        this._flushPendingDiagramSave();
+        // 新一轮开始：锁掉所有旧轮次的代码框。diagram.json 是"会话级当前图"单一覆盖层，
+        // 若旧轮次仍可编辑，改旧轮会静默覆盖最新轮的落盘内容——把可编辑画布唯一化到
+        // 最新一轮，UI 与存储模型才一致
+        this.el.messages.querySelectorAll('textarea.code-pre').forEach(t => { t.readOnly = true; });
         this.el.textarea.value = '';
         this.el.textarea.style.height = 'auto';
         this.setStreaming(true);
         if (window.app) window.app.updateStatus('生成中...', 'loading');
 
-        const aiRefs = this.appendAiMessage();
+        const aiRefs = this.appendAiMessage(prompt);
+        this._activeCodePre = aiRefs.codePre;
         this._thinkStartTime = Date.now();
 
         // 首次生成前懒申请会话 id
@@ -236,8 +271,11 @@ const chat = {
                 this.autoScroll();
             },
             onContent: (delta) => {
-                aiRefs.codePre.textContent += delta;
-                this.scheduleRender(aiRefs.codePre.textContent);
+                // 流式累积到 textarea.value。codePre 在流式期间 readOnly=true，
+                // 不会有用户光标，但保留 selectionStart/End 防御性赋值以免任何
+                // 残留 caret 位置出现跳变
+                aiRefs.codePre.value += delta;
+                this.scheduleRender(aiRefs.codePre.value);
                 this.autoScroll();
             },
             onDone: ({ mermaid, fixes, extracted }) => {
@@ -251,7 +289,14 @@ const chat = {
                 this._clearRenderTimer();
                 aiRefs.caret.remove();
                 aiRefs.actionRow.style.display = 'none';
-                aiRefs.root.querySelector('.code-details').style.display = 'none';
+                // 出错后解锁编辑：与 onAbort / finalizeAiMessage 对称，否则这一轮的
+                // textarea 永远 readOnly，用户没法把已流出的半截代码改好再保存。
+                // 同时只在"一个字都没流出来"时才隐藏代码面板——有残片就留着给用户改，
+                // 隐藏它会让上面这次解锁变成空动作
+                aiRefs.codePre.readOnly = false;
+                if (!aiRefs.codePre.value.trim()) {
+                    aiRefs.root.querySelector('.code-details').style.display = 'none';
+                }
                 const err = document.createElement('div');
                 err.className = 'render-error';
                 err.textContent = (hint ? msg + '。' + hint : msg);
@@ -269,6 +314,10 @@ const chat = {
                     aiRefs.thinkBlock.classList.remove('streaming');
                 }
                 aiRefs.actionRow.style.display = 'flex';
+                // abort 后开放编辑：与 finalize 对称，避免中断后 textarea 永远锁死。
+                // 中断时 _mermaid 尚未设置（finalize 没跑），UI 上按钮"查看此图"会无响应，
+                // 用户可以继续手写修复并触发保存——这是有意的 graceful degrade
+                aiRefs.codePre.readOnly = false;
                 this.setStreaming(false);
                 if (window.app) window.app.updateStatus('已停止', 'ready');
             }
@@ -286,6 +335,12 @@ const chat = {
         send.querySelector('.icon-send').style.display = on ? 'none' : 'inline';
         send.querySelector('.icon-stop').style.display = on ? 'inline' : 'none';
         send.title = on ? '停止生成' : '发送 (Enter / Ctrl+Enter)';
+        // 流式开启：把"在生成中"那条 AI 消息的 textarea 上锁，避免用户误编辑被
+        // 后续 delta 覆盖（也保护 _pendingDiagramSave 不会被脏数据污染）。
+        // finalizeAiMessage 与 onAbort 都会解锁，这里只管上锁
+        if (on && this._activeCodePre) {
+            this._activeCodePre.readOnly = true;
+        }
     },
 
     finalizeAiMessage(aiRefs, mermaid, fixes) {
@@ -299,11 +354,16 @@ const chat = {
             const secs = Math.max(1, Math.round((Date.now() - this._thinkStartTime) / 1000));
             aiRefs.thinkLabel.textContent = `思考过程 · 已思考 ${secs}s`;
         }
-        // 最终代码：用净化后 mermaid 覆盖流式累积的原始文本
+        // 最终代码：用净化后 mermaid 覆盖流式累积的原始文本；同时解除 readOnly，
+        // 立即开放编辑（与 abort 路径对称）。先写 value 再解锁，避免任何中间态
         if (mermaid) {
-            aiRefs.codePre.textContent = mermaid;
+            aiRefs.codePre.value = mermaid;
+            aiRefs.codePre.readOnly = false;
             this.currentMermaid = mermaid;
             this.renderMermaid(mermaid);
+        } else {
+            // 即使 mermaid 为空（LLM 提取失败），也要解锁以保留用户手动写
+            aiRefs.codePre.readOnly = false;
         }
         this.messages.push({ role: 'assistant', content: mermaid || '' });
         this.setStreaming(false);
@@ -333,6 +393,130 @@ const chat = {
         if (window.mermaidRender) window.mermaidRender.render(code);
     },
 
+    /**
+     * 用户在 AI 消息的代码 <textarea> 里输入——三个同步动作：
+     *   1) 更新 currentMermaid，让后续"重新生成"用编辑后的代码作为种子
+     *   2) 重用 scheduleRender（已存在的 600ms 防抖、silent:true），边输入边预览；
+     *      silent 必不可少：输入到一半可能是无效 mermaid，预览不该弹错
+     *   3) 调度 _scheduleDiagramSave，把编辑后内容节流持久化到 diagram.json
+     *
+     * 流式期间 readonly 锁住了编辑入口，事件不会触发；防御性再做 sessionId 守卫
+     * 防止刚切会话的瞬间被旧 textarea 的 input 事件污染
+     */
+    _onCodeEdited(codePre) {
+        const code = codePre.value;
+        this.currentMermaid = code;
+        this.scheduleRender(code);
+        const sessionId = window.app && window.app.state ? window.app.state.sessionId : null;
+        // 空内容不落盘：防抖竞态（恢复瞬间的清空、误全选删除）产生的空 PATCH 会让
+        // diagram.json 的 code 变成 ''，恢复时 lastMermaid='' 触发 mermaidRender.clear()，
+        // 预览被无声抹掉。保留上一次的 diagram.json 是更安全的一侧
+        if (sessionId && code.trim()) this._scheduleDiagramSave(sessionId, code);
+    },
+
+    /**
+     * 节流保存到后端 diagram.json：600ms 与 scheduleRender 同节奏，让"输入→预览→落盘"
+     * 感受一致。失败入 localStorage 待重发队列 pd_pending_saves（FIFO），下一次
+     * PATCH 成功或页面加载时排空
+     */
+    _scheduleDiagramSave(sessionId, code) {
+        this._diagramSavePending = { sessionId, code, ts: Date.now() };
+        if (this._diagramSaveTimer) return;
+        this._diagramSaveTimer = setTimeout(() => {
+            this._diagramSaveTimer = null;
+            const pending = this._diagramSavePending;
+            this._diagramSavePending = null;
+            if (pending) this._dispatchDiagramSave(pending);
+        }, 600);
+    },
+
+    async _dispatchDiagramSave({ sessionId, code }) {
+        // 先排空待重发队列里的旧失败项，避免堆积
+        this._drainPendingSaves();
+        try {
+            const res = await fetch(`/api/session/${sessionId}/diagram`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(localStorage.getItem('pd_token') ? { 'Authorization': `Bearer ${localStorage.getItem('pd_token')}` } : {})
+                },
+                body: JSON.stringify({ code })
+            });
+            // 401 交由 apiFetch 的逻辑处理——这里静默丢弃由其他防御层接管。
+            // 401/403 不入队：登录态已失效，重发只会无限 401 循环
+            if (!res.ok && res.status !== 401 && res.status !== 403) {
+                this._enqueuePendingSave({ sessionId, code, ts: Date.now() });
+            }
+        } catch (e) {
+            // 网络层失败：把本次入队，等下次成功或页面加载时重发
+            this._enqueuePendingSave({ sessionId, code, ts: Date.now() });
+        }
+    },
+
+    _enqueuePendingSave(item) {
+        try {
+            const raw = localStorage.getItem('pd_pending_saves');
+            const arr = raw ? JSON.parse(raw) : [];
+            arr.push(item);
+            // 上限保护：异常输入轰炸场景不无限增长
+            if (arr.length > 50) arr.splice(0, arr.length - 50);
+            localStorage.setItem('pd_pending_saves', JSON.stringify(arr));
+        } catch (e) {
+            // localStorage 不可用（隐私模式/超额）静默丢
+        }
+    },
+
+    _drainPendingSaves() {
+        try {
+            const raw = localStorage.getItem('pd_pending_saves');
+            if (!raw) return;
+            const arr = JSON.parse(raw);
+            localStorage.removeItem('pd_pending_saves');
+            if (!Array.isArray(arr) || !arr.length) return;
+            // 顺序重发，每条独立失败/成功互不影响；任何新条目会自然落到下一轮 dispatch
+            (async () => {
+                for (const item of arr) {
+                    try {
+                        const res = await fetch(`/api/session/${item.sessionId}/diagram`, {
+                            method: 'PATCH',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                ...(localStorage.getItem('pd_token') ? { 'Authorization': `Bearer ${localStorage.getItem('pd_token')}` } : {})
+                            },
+                            body: JSON.stringify({ code: item.code })
+                        });
+                        // 非 2xx 也算失败，重新入队（401/403 除外，见 _dispatchDiagramSave）
+                        if (!res.ok && res.status !== 401 && res.status !== 403) {
+                            this._enqueuePendingSave(item);
+                        }
+                    } catch (e) {
+                        // 仍失败：push 回去待下次成功 PATCH 或下次启动时再试
+                        // 注意是 push 到队尾（_enqueuePendingSave 内部 arr.push），
+                        // 不是队首——drain 本轮不再回头重试这条
+                        this._enqueuePendingSave(item);
+                    }
+                }
+            })();
+        } catch (e) {
+            // localStorage 不可用/格式坏，静默丢
+        }
+    },
+
+    /**
+     * 立即 flush 一次挂起的 diagram 保存：在会话切换 / 新会话 / 登出前调用。
+     * 清掉防抖计时器并同步 fire-and-forget 一次 PATCH，失败不影响主流程
+     * （下次生成会覆盖 diagram.json，审计轨迹 history.json 不受牵连）
+     */
+    _flushPendingDiagramSave() {
+        if (this._diagramSaveTimer) {
+            clearTimeout(this._diagramSaveTimer);
+            this._diagramSaveTimer = null;
+        }
+        const pending = this._diagramSavePending;
+        this._diagramSavePending = null;
+        if (pending) this._dispatchDiagramSave(pending);
+    },
+
     copyText(text) {
         navigator.clipboard.writeText(text).then(
             () => window.app && window.app.showToast('已复制', 'success'),
@@ -343,8 +527,10 @@ const chat = {
     // ---- 清空（新会话/登出/会话切换）----
     clear() {
         this._clearRenderTimer();
+        this._flushPendingDiagramSave();
         this.messages = [];
         this.currentMermaid = '';
+        this._activeCodePre = null;
         // 清空输入框，杜绝跨会话/跨用户的草稿残留（旧 app.js 的 inputPrompt 清空守卫等价）
         if (this.el.textarea) {
             this.el.textarea.value = '';
@@ -359,7 +545,10 @@ const chat = {
     // ---- 历史恢复 ----
     // 用完整历史重建聊天对话。每轮 AI 消息展示代码块（默认折叠），仅最后一轮的
     // mermaid 渲染到预览区，避免对每轮都跑 mermaid.render 造成卡顿。
-    renderHistory(history) {
+    // lastMermaid 来自后端 checkSession：diagram.json（用户编辑）优先于 history
+    // 最后一条 assistant。不消费它，用户的编辑在恢复时就会被 LLM 原文顶掉。
+    // 只有最后一轮开放编辑：diagram.json 是会话级覆盖层，多个可编辑框会互相覆盖。
+    renderHistory(history, lastMermaid) {
         this.clear();
         if (!history || !history.length) {
             this.showWelcome();
@@ -369,20 +558,30 @@ const chat = {
         for (let i = history.length - 1; i >= 0; i--) {
             if (history[i].role === 'assistant') { lastAssistantIdx = i; break; }
         }
+        let pendingPrompt = '';
         for (let i = 0; i < history.length; i++) {
             const m = history[i];
             if (m.role === 'user') {
+                pendingPrompt = m.content || '';
                 this.appendUserMessage(m.content);
             } else if (m.role === 'assistant') {
-                const ai = this.appendAiMessage();
+                const isLast = (i === lastAssistantIdx);
+                // 最后一轮展示 diagram.json 的编辑后内容（若有），其余轮次展示历史原文
+                const shown = (isLast && typeof lastMermaid === 'string' && lastMermaid)
+                    ? lastMermaid
+                    : (m.content || '');
+                const ai = this.appendAiMessage(pendingPrompt);
+                pendingPrompt = '';
                 ai.caret.remove();
                 ai.actionRow.style.display = 'flex';
-                ai.root._mermaid = m.content || '';
-                ai.codePre.textContent = m.content || '';
+                ai.root._mermaid = shown;
+                ai.codePre.value = shown;
+                // 仅最后一轮可编辑，旧轮次保持 readOnly（默认值）
+                ai.codePre.readOnly = !isLast;
                 this.messages.push({ role: 'assistant', content: m.content || '' });
-                if (i === lastAssistantIdx && m.content) {
-                    this.currentMermaid = m.content;
-                    this.renderMermaid(m.content);
+                if (isLast && shown) {
+                    this.currentMermaid = shown;
+                    this.renderMermaid(shown);
                 }
             }
         }
@@ -473,7 +672,9 @@ const chat = {
             try {
                 const evt = JSON.parse(dataStr);
                 if (evt.type === 'thinking' && evt.delta !== undefined) onThinking && onThinking(evt.delta);
-                else if (evt.type === 'content' && evt.delta !== undefined) onContent && onContent(evt.delta);
+                // finalized 后（done/error/abort 已跑）丢弃残留 content：abort 时
+                // textarea 已解锁 readOnly，尾包 delta 会追加到用户正在编辑的内容里
+                else if (evt.type === 'content' && evt.delta !== undefined) { if (!finalized) onContent && onContent(evt.delta); }
                 else if (evt.type === 'done') finish(() => onDone && onDone({ mermaid: evt.mermaid, fixes: evt.fixes || [], extracted: evt.extracted }));
                 else if (evt.type === 'error') finish(() => onError && onError(evt.message || '生成失败', evt.hint || ''));
             } catch (e) {
