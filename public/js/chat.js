@@ -164,7 +164,12 @@ const chat = {
         codePre.readOnly = true;
         codePre.spellcheck = false;
         codePre.wrap = 'off';
-        codePre.addEventListener('input', () => this._onCodeEdited(codePre));
+        // 高度自适应是即时的、与 _onCodeEdited 的 600ms 节流相互独立（后者管渲染与
+        // 落盘，高度不该跟着节流），故在同一个 input 监听里先于它直调
+        codePre.addEventListener('input', () => { this._fitCodeHeight(codePre); this._onCodeEdited(codePre); });
+        // details 折叠时 textarea 不渲染、scrollHeight 恒为 0，赋值点无法测量；
+        // 展开瞬间才是真正的测量时机
+        details.addEventListener('toggle', () => { if (details.open) this._fitCodeHeight(codePre); });
         details.appendChild(summary);
         details.appendChild(codePre);
 
@@ -275,6 +280,7 @@ const chat = {
                 // 不会有用户光标，但保留 selectionStart/End 防御性赋值以免任何
                 // 残留 caret 位置出现跳变
                 aiRefs.codePre.value += delta;
+                this._fitCodeHeight(aiRefs.codePre);
                 this.scheduleRender(aiRefs.codePre.value);
                 this.autoScroll();
             },
@@ -358,6 +364,7 @@ const chat = {
         // 立即开放编辑（与 abort 路径对称）。先写 value 再解锁，避免任何中间态
         if (mermaid) {
             aiRefs.codePre.value = mermaid;
+            this._fitCodeHeight(aiRefs.codePre);
             aiRefs.codePre.readOnly = false;
             this.currentMermaid = mermaid;
             this.renderMermaid(mermaid);
@@ -391,6 +398,24 @@ const chat = {
     renderMermaid(code) {
         this._clearRenderTimer();
         if (window.mermaidRender) window.mermaidRender.render(code);
+    },
+
+    /**
+     * 代码框高度自适应：随内容行数长高，超过 480px（与 CSS max-height 对齐）后内部
+     * 滚动，替代旧的 resize: vertical 手动拉伸。wrap="off" 下 scrollHeight 只反映
+     * 真实行数，横向滚动不干扰测量。先复位 auto 再量，否则上一次钳制过的显式高度
+     * 会让测量值停在 480。+2 补 border：scrollHeight 不含 border，而 box-sizing:
+     * border-box 下显式 height 含上下各 1px border，不补则可视内容区少 2px，
+     * 内容未超上限时也会出现"可滚 2px"的假滚动条（钳制值 480 同样含 border，
+     * 与 CSS max-height 一致）。details 折叠时元素不渲染、scrollHeight 为 0，此时
+     * 跳过（保持 auto，留默认高度），展开时由 toggle 监听补测。流式逐 delta 调用
+     * 无需 debounce：折叠状态下是空操作，展开状态也只多一次强制回流，量级远小于
+     * 渲染本身
+     */
+    _fitCodeHeight(codePre) {
+        codePre.style.height = 'auto';
+        const h = codePre.scrollHeight;
+        if (h) codePre.style.height = Math.min(h + 2, 480) + 'px';
     },
 
     /**
@@ -576,6 +601,7 @@ const chat = {
                 ai.actionRow.style.display = 'flex';
                 ai.root._mermaid = shown;
                 ai.codePre.value = shown;
+                this._fitCodeHeight(ai.codePre);
                 // 仅最后一轮可编辑，旧轮次保持 readOnly（默认值）
                 ai.codePre.readOnly = !isLast;
                 this.messages.push({ role: 'assistant', content: m.content || '' });

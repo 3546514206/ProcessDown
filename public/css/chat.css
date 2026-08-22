@@ -232,11 +232,13 @@
     white-space: pre;
     color: var(--text-primary);
     /* textarea-only：保留 <pre> 时期的所有外观规则（color/font/padding/背景），
-       仅扩展让 textarea 也像"可编辑代码块"。resize: vertical 允许纵向拉伸（开发者直觉）；
-       min-height 防止折叠到 0；outline:none 关掉默认焦点环，边框色已变 2px 强调
+       仅扩展让 textarea 也像"可编辑代码块"。高度由 chat.js 的 _fitCodeHeight 随内容
+       自适应（超过 480px 后内部滚动），故 resize: none、无需 min-height；
+       outline:none 关掉默认焦点环，边框色已变 2px 强调
        红色作为"可编辑"信号——focus 状态不需要再叠一圈 */
-    resize: vertical;
-    min-height: 80px;
+    resize: none;
+    max-height: 480px;
+    overflow-y: auto;
     outline: none;
     width: 100%;
     box-sizing: border-box;
