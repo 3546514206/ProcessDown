@@ -16,6 +16,18 @@ class GeneratorService {
     }
 
     /**
+     * 按渲染主题在 system prompt 后追加配色适配指令。
+     * 主题是运行期变量（用户可随时深浅切换），不能写死进 prompts/system.txt，
+     * 只能在代码里动态追加；三个生成入口共用本方法，不复制文案。
+     */
+    buildSystemPrompt(theme) {
+        const themeHint = theme === 'dark'
+            ? '当前图表将在深色主题（深色背景）下渲染。若需用 classDef 或主题变量自定义配色，请保证文字与填充在深色背景上对比度足够，避免深底深字或过暗的颜色。'
+            : '当前图表将在浅色主题（白色背景）下渲染。若需用 classDef 或主题变量自定义配色，请保证文字与填充在白色背景上对比度足够，避免深底深字或过浅的颜色。';
+        return `${this.systemPrompt}\n\n${themeHint}`;
+    }
+
+    /**
      * Load system prompt from file
      */
     loadSystemPrompt() {
@@ -72,7 +84,7 @@ sequenceDiagram
      * this turn's user message is the precise present state while history only
      * provides conversational context.
      */
-    async generate(prompt, currentMermaid = null, history = []) {
+    async generate(prompt, currentMermaid = null, history = [], theme = 'light') {
         logger.info('Generating Mermaid code for prompt:', prompt.substring(0, 100));
 
         const messages = [...history];
@@ -90,7 +102,7 @@ sequenceDiagram
         }
 
         try {
-            const response = await this.llm.chat(messages, this.systemPrompt);
+            const response = await this.llm.chat(messages, this.buildSystemPrompt(theme));
             const extractedCode = extractMermaidCode(response);
 
             if (!extractedCode) {
@@ -126,7 +138,7 @@ sequenceDiagram
     /**
      * Regenerate from current Mermaid code
      */
-    async regenerate(mermaid, instruction) {
+    async regenerate(mermaid, instruction, theme = 'light') {
         logger.info('Regenerating with instruction:', instruction.substring(0, 100));
 
         const messages = [{
@@ -135,7 +147,7 @@ sequenceDiagram
         }];
 
         try {
-            const response = await this.llm.chat(messages, this.systemPrompt);
+            const response = await this.llm.chat(messages, this.buildSystemPrompt(theme));
             let extractedCode = extractMermaidCode(response);
 
             if (!extractedCode) {
@@ -167,9 +179,11 @@ sequenceDiagram
      * 流式生成 Mermaid 代码。messages 构造与 generate 一致；逐 delta 透传
      * thinking/content 给调用方（SSE 路由）。流式期间累积 content，结束后跑
      * extractMermaidCode + autoFixMermaidCode 得到最终代码，再回调 onDone。
-     * signal 由调用方传入，客户端断开时中止上游请求。
+     * signal 由调用方传入，客户端断开时中止上游请求。theme 为渲染主题
+     * （'dark'|'light'），仅追加 system prompt 配色指令，置尾参以免破坏
+     * 既有 (prompt, currentMermaid, history, callbacks, signal) 调用方。
      */
-    async generateStream(prompt, currentMermaid = null, history = [], callbacks = {}, signal) {
+    async generateStream(prompt, currentMermaid = null, history = [], callbacks = {}, signal, theme = 'light') {
         logger.info('Streaming Mermaid code for prompt:', prompt.substring(0, 100));
 
         const messages = [...history];
@@ -192,7 +206,7 @@ sequenceDiagram
         };
 
         try {
-            await this.llm.chatStream(messages, this.systemPrompt, {
+            await this.llm.chatStream(messages, this.buildSystemPrompt(theme), {
                 onThinking: callbacks.onThinking,
                 onContent
             }, signal);

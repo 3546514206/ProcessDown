@@ -8,7 +8,10 @@
 
 // State
 const state = {
-    theme: localStorage.getItem('theme') || 'dark',
+    // 全站唯一主题状态（localStorage['site-theme']，'dark' | 'light'，默认
+    // light）：UI 配色（data-theme）、画布背景（components.setTheme）、mermaid
+    // 主题（initMermaid）、导出底色（export.js）全部由它派生，无独立开关。
+    siteTheme: 'light',
     user: null,
     // In-memory only：当前会话 id。null 表示尚未创建，首次生成时懒申请。
     sessionId: null
@@ -37,18 +40,15 @@ const elements = {
     historyList: document.getElementById('history-list'),
     // 顶栏
     userBadge: document.getElementById('user-badge'),
-    btnLogout: document.getElementById('btn-logout')
+    btnLogout: document.getElementById('btn-logout'),
+    btnSiteTheme: document.getElementById('btn-site-theme')
 };
 
 // Initialize Mermaid
 function initMermaid() {
-    // mermaid v11 只接受 base 主题名（dark/default/forest/neutral/base），
-    // state.theme='transparent' 是项目自定义的预览背景，不是 mermaid theme——
-    // 直接传 'transparent' 会让 mermaid 抛错，进而阻断 initEventListeners。
-    // 这里统一兜底：透明背景配 light mermaid 主题（白底更易读）。
-    const mermaidTheme = state.theme === 'light' || state.theme === 'transparent'
-        ? 'default'
-        : 'dark';
+    // mermaid v11 只接受 base 主题名：深色站配 'dark'、浅色站配 'default'，
+    // 与画布背景/导出底色同源（state.siteTheme）
+    const mermaidTheme = state.siteTheme === 'light' ? 'default' : 'dark';
     mermaid.initialize({
         startOnLoad: false,
         theme: mermaidTheme,
@@ -72,6 +72,63 @@ function showToast(message, type = 'info') {
 function updateStatus(text, type = 'ready') {
     elements.statusText.textContent = text;
     elements.statusText.className = `status-${type}`;
+}
+
+// ---- Site theme 全站深/浅色主题 --------------------------------------------
+// 顶栏按钮是全站唯一主题开关：data-theme（UI 配色）+ components.setTheme
+// （画布背景，内部再触发 reinitMermaid 用新 mermaid 主题重渲染当前图表）。
+// index.html 头部有同步内联脚本在首帧前写入 data-theme 防闪烁（含旧 'theme'
+// 键的一次性迁移），这里负责按钮态同步与切换。
+
+const SITE_THEME_KEY = 'site-theme';
+
+function readSiteTheme() {
+    // 隐私模式等场景 localStorage 访问可能抛异常：回退默认浅色
+    try {
+        return localStorage.getItem(SITE_THEME_KEY) === 'dark' ? 'dark' : 'light';
+    } catch (e) {
+        return 'light';
+    }
+}
+
+// 运行时真源：applySiteTheme 总是先写 state 再动 DOM，而持久化可能失败
+// （隐私模式/配额满，见 toggleSiteTheme 的吞错）。运行期读点（画布背景类、
+// 导出底色）必须走这里；readSiteTheme 只服务引导时读存储（init 与迁移场景），
+// 否则存储写失败后界面已浅色、导出却仍按存储里的 'dark' 出深底图。
+function getSiteTheme() {
+    return state.siteTheme;
+}
+
+function applySiteTheme(theme) {
+    state.siteTheme = theme;
+    document.documentElement.dataset.theme = theme;
+    // 按钮态同步对缺件降级：按钮或任一图标 SVG 缺失时（异常 DOM / 部分加载），
+    // 上面两行已让主题本身生效，直接返回。不守卫的话这里的 TypeError 会顺着
+    // init -> initEventListeners -> checkAuth 把登录链路整体炸掉。
+    const btn = elements.btnSiteTheme;
+    const moon = btn && btn.querySelector('.icon-moon');
+    const sun = btn && btn.querySelector('.icon-sun');
+    if (!btn || !moon || !sun) return;
+    // 图标反映当前态：深色显示月亮、浅色显示太阳；title 提示点击后的去向
+    const isDark = theme === 'dark';
+    btn.title = isDark ? '切换浅色主题' : '切换深色主题';
+    moon.style.display = isDark ? '' : 'none';
+    sun.style.display = isDark ? 'none' : '';
+}
+
+function toggleSiteTheme() {
+    const next = state.siteTheme === 'dark' ? 'light' : 'dark';
+    try {
+        localStorage.setItem(SITE_THEME_KEY, next);
+    } catch (e) {
+        // 持久化失败（隐私模式）不阻断：本次会话内切换仍应生效
+    }
+    applySiteTheme(next);
+    // 画布背景跟随，并在主题变化时经 components.setTheme -> reinitMermaid
+    // 用新 mermaid 主题重渲染当前图表；导出底色读同一状态（export.js），自然跟随
+    if (window.components) {
+        window.components.setTheme(next);
+    }
 }
 
 // ---- Auth helpers ---------------------------------------------------------
@@ -397,6 +454,10 @@ async function ensureSession() {
 
 function reinitMermaid() {
     initMermaid();
+    // 流式生成中 currentMermaid 停留在上一轮完整图：此时重渲染会用旧图
+    // 非静默顶掉预览区正在流式更新的半成品。只重设主题不渲染--后续 600ms
+    // 节流的 silent 渲染与流完成后的 finalize 渲染自然以新主题落地。
+    if (window.chat && window.chat.isStreaming) return;
     if (window.chat && window.chat.currentMermaid) {
         window.chat.renderMermaid(window.chat.currentMermaid);
     }
@@ -437,6 +498,11 @@ function initEventListeners() {
         tab.addEventListener('click', () => switchLoginTab(tab.dataset.tab));
     });
     elements.btnLogout.addEventListener('click', handleLogout);
+    // 缺件守卫：与 applySiteTheme 的承诺一致，否则 HTML/JS 版本错配时这里的
+    // TypeError 会炸掉 initEventListeners，登录遮罩永不出现
+    if (elements.btnSiteTheme) {
+        elements.btnSiteTheme.addEventListener('click', toggleSiteTheme);
+    }
 
     elements.btnToggleDrawer.addEventListener('click', toggleDrawer);
     elements.btnCloseDrawer.addEventListener('click', closeDrawer);
@@ -454,6 +520,8 @@ function initEventListeners() {
 }
 
 async function init() {
+    // 全站主题：内联脚本已设过 data-theme，这里同步按钮图标态并纳入 state
+    applySiteTheme(readSiteTheme());
     // mermaid 初始化与按钮事件绑定解耦：之前 initMermaid 抛错时
     // initEventListeners 不会跑，导致登录/登出/抽屉/Ctrl+K 全部失效。
     // mermaid 失败不应让基础交互失效——把异常隔离在 try 里。
@@ -474,6 +542,8 @@ window.app = {
     showToast,
     updateStatus,
     reinitMermaid,
+    readSiteTheme,
+    getSiteTheme,
     apiFetch,
     ensureSession,
     loadSessions,

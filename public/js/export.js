@@ -54,7 +54,12 @@ const exportModule = {
         }
 
         try {
-            const theme = localStorage.getItem('theme') || 'dark';
+            // 导出底色跟随全站主题：深色站导深底、浅色站导白底。
+            // 走 getSiteTheme（运行时真源）而非读存储：持久化失败（隐私模式）
+            // 时界面已浅色，读存储会拿到旧 'dark' 导出深底图
+            const theme = window.app && window.app.getSiteTheme
+                ? window.app.getSiteTheme()
+                : 'light';
 
             // 走 apiFetch：自动带 Bearer 登录态，且 401 时清 token 弹登录遮罩
             // （原生 fetch 会在 token 过期时卡在错误 toast）。apiFetch 已设

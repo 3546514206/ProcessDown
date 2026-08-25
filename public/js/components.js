@@ -11,7 +11,7 @@ const components = {
     isPanning: false,
     startX: 0,
     startY: 0,
-    theme: 'dark',
+    theme: 'light',
 
     // Elements
     previewContent: null,
@@ -21,17 +21,18 @@ const components = {
         this.previewContent = document.getElementById('preview-content');
         this.previewArea = document.getElementById('preview-area');
         this.previewPanel = document.getElementById('panel-right');
-        this.theme = localStorage.getItem('theme') || 'dark';
+        // 画布背景由全站主题（site-theme）统一驱动：读取逻辑收敛在 app.js
+        // 的 readSiteTheme，避免两处 localStorage 解析各自漂移
+        this.theme = window.app && window.app.readSiteTheme ? window.app.readSiteTheme() : 'light';
 
         this.initZoomControls();
         this.initPanControls();
-        this.initBackgroundControls();
         this.initFullscreenControl();
         this.initPreviewFullscreenControl();
         this.initPanelResizer();
         this.initKeyboardShortcuts();
 
-        // Load saved theme
+        // Apply theme to canvas
         this.setTheme(this.theme);
     },
 
@@ -137,62 +138,27 @@ const components = {
         });
     },
 
-    // Background controls
-    initBackgroundControls() {
-        const btnBgDark = document.getElementById('btn-bg-dark');
-        const btnBgLight = document.getElementById('btn-bg-light');
-        const btnBgTransparent = document.getElementById('btn-bg-transparent');
-
-        btnBgDark.addEventListener('click', () => this.setTheme('dark'));
-        btnBgLight.addEventListener('click', () => this.setTheme('light'));
-        btnBgTransparent.addEventListener('click', () => this.setTheme('transparent'));
-
-        // Update button states
-        this.updateBgButtons();
-    },
-
+    // Background: 画布背景与全站主题统一，无独立按钮（旧 btn-bg-* 三态已删除）。
+    // 仅接受 'dark' | 'light' 二值，由 app.js 的 toggleSiteTheme 调用。
     setTheme(theme) {
         const oldTheme = this.theme;
         this.theme = theme;
-        localStorage.setItem('theme', theme);
 
         const container = document.getElementById('mermaid-container');
         if (container) {
-            container.classList.remove('bg-dark', 'bg-light', 'bg-transparent');
-
-            if (theme === 'dark') {
-                container.classList.add('bg-dark');
-            } else if (theme === 'light') {
-                container.classList.add('bg-light');
-            }
+            container.classList.remove('bg-dark', 'bg-light');
+            container.classList.add(theme === 'light' ? 'bg-light' : 'bg-dark');
         }
-
-        this.updateBgButtons();
 
         if (this.previewArea) {
-            this.previewArea.style.background = theme === 'transparent'
-                ? 'repeating-conic-gradient(#e8e8e8 0% 25%, #fff 0% 50%) 50% / 20px 20px'
-                : (theme === 'dark' ? '#1a1a2e' : '#f5f5f5');
+            this.previewArea.style.background = theme === 'light' ? '#f5f5f5' : '#1a1a2e';
         }
 
+        // 主题变化时让当前图表以新 mermaid 主题重渲染：复用 app.reinitMermaid
+        // 链路（initMermaid + chat.renderMermaid(currentMermaid)），不另造通道
         if (theme !== oldTheme && window.app && window.app.reinitMermaid) {
             window.app.reinitMermaid();
         }
-    },
-
-    updateBgButtons() {
-        const buttons = [
-            { id: 'btn-bg-dark', theme: 'dark' },
-            { id: 'btn-bg-light', theme: 'light' },
-            { id: 'btn-bg-transparent', theme: 'transparent' }
-        ];
-
-        buttons.forEach(({ id, theme }) => {
-            const btn = document.getElementById(id);
-            if (btn) {
-                btn.classList.toggle('active', this.theme === theme);
-            }
-        });
     },
 
     // Fullscreen control

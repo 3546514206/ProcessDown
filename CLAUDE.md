@@ -11,7 +11,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 node src/server/index.js          # 前台运行
 ./bin/start.sh start              # 后台运行：start | stop | restart | status
 
-# 测试（node:test，当前 409 项：376 过 / 33 挂，红的原因见"约定与坑"的测试约定）
+# 测试（node:test，当前 422 项：389 过 / 33 挂，红的原因见"约定与坑"的测试约定）
 npm test                          # 跑 tests/unit/ 全部单元测试
 node tests/export.test.js         # 手动 PNG 渲染脚本（无断言，渲染到 /tmp 供肉眼检查）
 node tests/prompt-eval/eval.js    # 提示词类型识别评估器（48 用例，调真实 LLM，慢）
@@ -72,12 +72,13 @@ node tests/prompt-eval/eval.js    # 提示词类型识别评估器（48 用例�
 服务端 SVG->PNG，基于 `@resvg/resvg-wasm`（纯 WASM，无原生依赖--`node_modules` 可在 macOS/Windows/Linux 之间直接拷贝）。WASM 初始化和内嵌的思源黑体（`assets/fonts/SourceHanSansSC-Regular.otf`）是模块级单例 promise（懒加载，失败可重试）。SVG 中所有 `font-family` 声明都被统一归一化为思源黑体，保证中文在各平台一致渲染。这正是 `prompts/system.txt` 禁止节点文本使用 HTML 标签的原因：resvg 不渲染 HTML 标签，导出 PNG 时这些内容会消失。唯一例外是换行统一用 `<br/>`（mermaid 与 resvg 都支持）。前端 Mermaid 以 `securityLevel: 'loose'` 运行以获得渲染灵活性，而提示词把输出约束为纯文本--两者相容，并不矛盾。`/api/export/png` 受 `authUser` 保护，前端 `export.js` 走 `apiFetch`（带 Bearer，401 清登录态弹遮罩）。
 
 ### 前端（`public/js/`，无框架）
-挂在 `window` 上的模块：`app`（鉴权/历史抽屉/状态栏/配置加载）、`chat`（对话式 UI 全部逻辑，最大模块）、`mermaidRender`（渲染 + 带行上下文的结构化错误诊断；`silent` 模式供流式节流渲染静默容错，失败保留上次结果不弹错）、`components`（缩放/平移/背景/预览区全屏/整页全屏/分隔条/快捷键）、`exportModule`（PNG 走服务端接口含 1x/2x/3x 缩放菜单，SVG 走客户端 Blob）。通过 `window.*` 全局变量和 `localStorage` 通信。样式 `public/css/style.css` + `chat.css`。
+挂在 `window` 上的模块：`app`（鉴权/历史抽屉/状态栏/配置加载/全站主题切换）、`chat`（对话式 UI 全部逻辑，最大模块）、`mermaidRender`（渲染 + 带行上下文的结构化错误诊断；`silent` 模式供流式节流渲染静默容错，失败保留上次结果不弹错）、`components`（缩放/平移/背景（随全站主题联动，无独立按钮）/预览区全屏/整页全屏/分隔条/快捷键）、`exportModule`（PNG 走服务端接口含 1x/2x/3x 缩放菜单，SVG 走客户端 Blob）。通过 `window.*` 全局变量和 `localStorage` 通信。样式 `public/css/style.css` + `chat.css`（深/浅双主题由 `<html data-theme>` 驱动）。
 
 - **chat 模块**（`chat.js`）：欢迎态示例 chip、自适应高度输入框（Enter 发送 / Shift+Enter 换行）、发送/停止按钮切换、per-round 操作行（查看此图/复制代码/重新生成--重放**本轮**指令而非全局最后一条 user）、思考过程折叠块（终态折叠并标注秒数）、回到底部按钮。
 - **流式前端**：`fetch` + `ReadableStream` 手动解析 SSE（需带 Bearer 头，不能用 EventSource），`AbortController` 停止生成，`finish` 包装保证 done/error/abort 终态互斥只跑一次，连接被反代切断等断连场景有兜底 error。`streamGenerate` 的 401 处理**刻意与 `apiFetch` 不同**：不清聊天 DOM（已生成内容已落盘可恢复），仅清登录态弹遮罩。
 - **代码编辑**：AI 消息的代码面板是 `<textarea>`，`readOnly` 属性是唯一编辑门（流式上锁、finalize/abort/error 解锁；新一轮生成把所有旧轮重新上锁--diagram.json 是会话级覆盖层，可编辑画布唯一化到最新一轮）。编辑触发 600ms **节流**的 silent 重渲染与 600ms 节流的 `PATCH /api/session/:id/diagram` 落盘（两处同节奏）；PATCH 失败入 `localStorage['pd_pending_saves']`（上限 50）待重发，启动时排空，切换会话/新建/登出/新一轮前 flush。
-- **登录遮罩**：未登录时 `login-mask` 覆盖主界面，含登录/注册表单。`apiFetch`（挂在 `window.app`）统一为请求加 `Authorization: Bearer <token>`，401 时清 localStorage 登录态并弹遮罩。token 存 `localStorage['pd_token']`，用户名仅存内存 `state.user`（刷新即丢，需重新登录），主题仍存 `localStorage['theme']`。
+- **登录遮罩**：未登录时 `login-mask` 覆盖主界面，含登录/注册表单。`apiFetch`（挂在 `window.app`）统一为请求加 `Authorization: Bearer <token>`，401 时清 localStorage 登录态并弹遮罩。token 存 `localStorage['pd_token']`，用户名仅存内存 `state.user`（刷新即丢，需重新登录）。
+- **全站主题（深/浅）**：`localStorage['site-theme']`（`'dark'|'light'`，默认 light）是唯一主题状态源，顶栏按钮唯一开关，统一驱动 UI 配色（`<html data-theme>` + CSS 变量覆盖块）、画布背景（`components.setTheme` 的 bg-dark/bg-light）、mermaid 主题（dark/default）、导出底色。运行期读点走 `app.getSiteTheme()`（state 真源，存储写失败如隐私模式时不分裂）；`readSiteTheme()` 只服务引导时读存储。`index.html` head 内联脚本在首帧前写 data-theme 防闪烁，并对旧 `theme` 键（画布背景三态，已随三按钮一起移除）做一次性迁移：`dark -> dark`、其余 -> light（旧键保留不删）。切换主题经 `reinitMermaid` 重渲染当前图，但流式生成中只重设 mermaid 主题不渲染（防旧图顶掉流式半成品）。
 - **启动鉴权**：有 token 则 `GET /api/auth/me` 验证，失败显遮罩。
 - **左侧可收回历史会话抽屉**（`history-drawer`）：登录后 `GET /api/sessions` 渲染列表（首轮提示词前 30 字摘要，按 updatedAt 分组为今天/昨天/更早）。点击某条会话调 `/api/session/check`，前端 `chat.renderHistory` 用返回的完整 history 重建对话，仅最后一轮可编辑、渲染其图（lastMermaid 取 diagram.json，用户编辑优先）。"新建会话"按钮与 Ctrl+K 开新会话；流式中禁止切换/新建。顶栏"历史会话"按钮 toggle 开关，抽屉内 × 按钮 `closeDrawer` 收起。
 - **已移除**：旧的"输入 uuid 恢复主页面"功能（`session-input`/`copySessionId`/`restoreSession`/`SESSION_ID_PATTERN`）已删除，`sessionInput.test.js` 同步删除。
@@ -95,5 +96,5 @@ node tests/prompt-eval/eval.js    # 提示词类型识别评估器（48 用例�
 - **CORS `Allow-Headers` 含 `Authorization`**（`cors.js`），跨域部署时 Bearer 预检才能通过。同源（默认，前端由本服务 serve）不触发 CORS。
 - **路径穿越防御**：username 走 `^[a-zA-Z0-9_-]{3,32}$` 白名单、sessionId 走 UUID 正则（`isValidId`），sessionId 操作始终限定在当前用户的 `sessions/` 目录下，跨用户不可访问他人会话。
 - **沿用周围的注释风格**：本代码库偏好解释**为什么**的注释（如 `envInt` 关于 NaN 与 `??` 的说明、`parseBody` 关于 buffer 拼合的理由、`max_tokens` 省略的原因、`login` 守卫位置的理由、`run/users/` 不清理的约束）。编辑时请保留。
-- **测试约定**：用 `node:test`，mock req/res 风格（见 `tests/unit/`）。`server/index.js` require 即 boot+listen 无法直接导入，涉及路由保护清单的测试用源码正则提取 + 真实 `authUser`+`createRouter` dispatch 组合（见 `protectedRoutes.edge.test.js`）；前端 DOM 逻辑有 jsdom 冒烟测试（`frontend*.smoke.test.js` 等）。**当前套件是红的**：409 项中 33 项失败，全部来自先于实现落下的测试--`editMessage.route.test.js`（测尚不存在的 `/api/message/edit` 路由）与 `frontendEditor.smoke.test.js`（测尚不存在的 `window.chat._installEditor`）；实现落地前不要为了"变绿"删测试或粉饰数字。另有 `tests/prompt-eval/`（提示词类型识别评估器，48 用例）、`tests/e2e/`、`tests/manual/`（手动冒烟文档）。
-- **jsdom 依赖隐患**：`frontendButtons.smoke.test.js`、`frontendEditor.smoke.test.js` 两个文件 `require('jsdom')`，但 `package.json` 没有 `devDependencies` 声明、lock 文件也无记录--jsdom 只是碰巧装在本地 `node_modules`，fresh `npm ci` 后这些测试必挂。
+- **测试约定**：用 `node:test`，mock req/res 风格（见 `tests/unit/`）。`server/index.js` require 即 boot+listen 无法直接导入，涉及路由保护清单的测试用源码正则提取 + 真实 `authUser`+`createRouter` dispatch 组合（见 `protectedRoutes.edge.test.js`）；前端 DOM 逻辑有 jsdom 冒烟测试（`frontend*.smoke.test.js` 等）。**当前套件是红的**：422 项中 33 项失败，全部来自先于实现落下的测试--`editMessage.route.test.js`（测尚不存在的 `/api/message/edit` 路由）与 `frontendEditor.smoke.test.js`（测尚不存在的 `window.chat._installEditor`）；实现落地前不要为了"变绿"删测试或粉饰数字。另有 `tests/prompt-eval/`（提示词类型识别评估器，48 用例）、`tests/e2e/`、`tests/manual/`（手动冒烟文档）。
+- **jsdom 依赖隐患**：`frontendButtons.smoke.test.js`、`frontendEditor.smoke.test.js`、`frontendSiteTheme.smoke.test.js` 三个文件 `require('jsdom')`，但 `package.json` 没有 `devDependencies` 声明、lock 文件也无记录--jsdom 只是碰巧装在本地 `node_modules`，fresh `npm ci` 后这些测试必挂。

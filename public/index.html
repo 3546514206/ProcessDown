@@ -1,9 +1,34 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ProcessDown - AI 流程图生成器</title>
+    <script>
+        // 全站主题防闪烁：必须在首帧渲染前同步写入 <html data-theme>，
+        // 晚于首帧会出现浅色用户先看到一帧深色的闪白/闪黑。
+        // localStorage['site-theme']（'dark' | 'light'，默认 light）是全站唯一
+        // 主题状态源：UI 配色、画布背景、mermaid 主题、导出底色全部由它派生。
+        // 一次性迁移：老用户只有旧 'theme' 键（画布背景三态），dark -> dark、
+        // light/transparent/其他 -> light（显式选过深色的保留，其余落新默认浅色），
+        // 写回 site-theme 后前端不再读旧键（旧键保留不删，无害残留）。
+        // localStorage 不可访问（隐私模式等）时回退默认浅色。
+        // <html> 标签上的静态 data-theme="light" 是脚本失败/无 JS 时的兜底。
+        try {
+            let theme = localStorage.getItem('site-theme');
+            if (theme === null) {
+                theme = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
+                // 迁移写回单独容错：失败只影响下次刷新重跑一次迁移（幂等无害），
+                // 不能因此丢掉上面已算出的偏好--data-theme 仍用算出的值
+                try {
+                    localStorage.setItem('site-theme', theme);
+                } catch (e) {}
+            }
+            document.documentElement.dataset.theme = theme === 'dark' ? 'dark' : 'light';
+        } catch (e) {
+            document.documentElement.dataset.theme = 'light';
+        }
+    </script>
     <link rel="stylesheet" href="/css/style.css">
     <link rel="stylesheet" href="/css/chat.css">
 </head>
@@ -26,6 +51,15 @@
             <div class="header-actions">
                 <span id="user-badge" class="user-badge"></span>
                 <button id="btn-logout" class="btn btn-small" title="登出">登出</button>
+                <!-- 全站唯一主题开关：统一控制 UI 配色/画布背景/mermaid 主题/导出底色 -->
+                <button id="btn-site-theme" class="icon-btn" title="切换浅色主题">
+                    <svg class="icon-moon" viewBox="0 0 24 24" width="20" height="20">
+                        <path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/>
+                    </svg>
+                    <svg class="icon-sun" viewBox="0 0 24 24" width="20" height="20" style="display:none">
+                        <path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 0 0 0-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/>
+                    </svg>
+                </button>
                 <button id="btn-fullscreen" class="icon-btn" title="全屏 (F11)">
                     <svg viewBox="0 0 24 24" width="20" height="20">
                         <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
@@ -86,18 +120,6 @@
                             </button>
                             <button id="btn-zoom-reset" class="icon-btn" title="重置 (Ctrl+0)">
                                 <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>
-                            </button>
-                        </div>
-                        <div class="divider"></div>
-                        <div class="bg-controls">
-                            <button id="btn-bg-dark" class="icon-btn" title="深色背景">
-                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
-                            </button>
-                            <button id="btn-bg-light" class="icon-btn" title="白色背景">
-                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2c.55 0 1-.45 1-1s-.45-1-1-1H2c-.55 0-1 .45-1 1s.45 1 1 1zm18 0h2c.55 0 1-.45 1-1s-.45-1-1-1h-2c-.55 0-1 .45-1 1s.45 1 1 1zM11 2v2c0 .55.45 1 1 1s1-.45 1-1V2c0-.55-.45-1-1-1s-1 .45-1 1zm0 18v2c0 .55.45 1 1 1s1-.45 1-1v-2c0-.55-.45-1-1-1s-1 .45-1 1zM5.99 4.58a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0s.39-1.03 0-1.41L5.99 4.58zm12.37 12.37a.996.996 0 0 0-1.41 0 .996.996 0 0 0 0 1.41l1.06 1.06c.39.39 1.03.39 1.41 0a.996.996 0 0 0 0-1.41l-1.06-1.06zm1.06-10.96a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06zM7.05 18.36a.996.996 0 0 0 0-1.41.996.996 0 0 0-1.41 0l-1.06 1.06c-.39.39-.39 1.03 0 1.41s1.03.39 1.41 0l1.06-1.06z"/></svg>
-                            </button>
-                            <button id="btn-bg-transparent" class="icon-btn" title="透明背景">
-                                <svg viewBox="0 0 24 24" width="18" height="18"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V5h14v14z"/><path d="M7 7h10v2H7zm0 4h10v2H7zm0 4h7v2H7z" opacity=".5"/></svg>
                             </button>
                         </div>
                         <div class="divider"></div>

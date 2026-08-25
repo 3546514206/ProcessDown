@@ -1,5 +1,6 @@
 /* ProcessDown 聊天模式样式
-   随聊天改版新增；复用 style.css 的 CSS 变量，深色主题。
+   随聊天改版新增；复用 style.css 的 CSS 变量，深/浅双主题由
+   <html data-theme="dark"|"light"> 驱动（顶栏按钮切换，全站唯一主题源）。
    覆盖：消息列表、气泡、思考折叠块、代码折叠块、流式光标、输入区、
    预览/代码 Tab、欢迎态、示例 chip、回到底部按钮。 */
 
@@ -375,6 +376,12 @@
     opacity: 0.6;
 }
 
+/* 浅色下 .6 档的占位符文字对比度不足，仅浅色回调到 .75；
+   深色路径不命中本规则，保持原值 */
+html[data-theme="light"] .chat-textarea::placeholder {
+    opacity: 0.75;
+}
+
 .chat-send-btn {
     flex-shrink: 0;
     width: 36px;
@@ -395,8 +402,13 @@
 }
 
 .chat-send-btn:disabled {
-    background: #444;
+    background: var(--btn-disabled-bg);
     cursor: not-allowed;
+}
+
+.chat-send-btn:disabled svg {
+    /* 深色沿用原 #fff（--btn-disabled-icon 深色值），浅色换成可读的灰 */
+    fill: var(--btn-disabled-icon);
 }
 
 .chat-send-btn svg {

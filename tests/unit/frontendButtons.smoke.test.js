@@ -58,6 +58,19 @@ describe('public/js 按钮事件烟雾测试', () => {
         }
     });
 
+    it('画布背景三按钮已删除，顶栏按钮是全站唯一主题开关', () => {
+        // 统一主题模型：btn-bg-* 三态按钮（dark/light/transparent）已随
+        // "透明档删除"移除，主题只能由顶栏 btn-site-theme 统一切换。
+        const { document } = loadPage();
+        for (const id of ['btn-bg-dark', 'btn-bg-light', 'btn-bg-transparent']) {
+            assert.ok(!document.getElementById(id), `DOM #${id} 应已删除`);
+        }
+        assert.ok(!document.querySelector('.bg-controls'),
+            '.bg-controls 按钮容器应已删除');
+        assert.ok(document.getElementById('btn-site-theme'),
+            '顶栏 #btn-site-theme 必须存在（全站唯一主题开关）');
+    });
+
     it('点击历史会话按钮 → 抽屉添加 .open 类', () => {
         const { document, errs } = loadPage();
         document.getElementById('btn-toggle-drawer').click();

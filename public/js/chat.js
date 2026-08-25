@@ -636,7 +636,10 @@ const chat = {
                 body: JSON.stringify({
                     prompt,
                     mermaid: currentMermaid || undefined,
-                    sessionId: sessionId || undefined
+                    sessionId: sessionId || undefined,
+                    // 上送当前全站主题，让 LLM 生成适配该模式（深/浅底）的配色。
+                    // 防御式取值：jsdom 冒烟测试等环境可能没有 app 模块
+                    theme: (window.app && window.app.getSiteTheme) ? window.app.getSiteTheme() : 'light'
                 }),
                 signal: this._abortController.signal
             });

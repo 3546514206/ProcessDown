@@ -372,6 +372,11 @@ function createRouter(config) {
                 }
 
                 const { prompt, mermaid: currentMermaid, sessionId } = body;
+                // theme 净化在路由层而非 validator.js：不加 400 校验以兼容不带
+                // theme 的旧客户端，非法/缺失一律回落 light（与前端默认一致）。
+                // typeof 守卫显式拒绝非字符串（如对象/数组/数字），避免 === 'dark'
+                // 对非字符串隐式 false 的语义依赖被未来重构误改
+                const theme = typeof body.theme === 'string' && body.theme === 'dark' ? 'dark' : 'light';
 
                 // sessionId is optional: without it we run a pure single-turn
                 // generation (keeps curl and legacy clients working). Only
@@ -398,7 +403,7 @@ function createRouter(config) {
                 const history = sessionStore ? sessionStore.readHistory(sessionId) : [];
 
                 // Generate Mermaid code with multi-turn context
-                const generatedCode = await generator.generate(prompt, currentMermaid, history);
+                const generatedCode = await generator.generate(prompt, currentMermaid, history, theme);
 
                 let responseHistory = [];
                 if (sessionStore) {
@@ -447,6 +452,8 @@ function createRouter(config) {
             }
 
             const { prompt, mermaid: currentMermaid, sessionId } = body;
+            // theme 净化规则与 /api/generate 一致：typeof 守卫一并复用
+            const theme = typeof body.theme === 'string' && body.theme === 'dark' ? 'dark' : 'light';
 
             let sessionStore = null;
             if (sessionId !== undefined) {
@@ -495,7 +502,7 @@ function createRouter(config) {
                         }
                         send({ type: 'done', mermaid, fixes, extracted });
                     }
-                }, controller.signal);
+                }, controller.signal, theme);
 
                 if (!res.writableEnded) {
                     res.write('data: [DONE]\n\n');
@@ -583,7 +590,10 @@ function createRouter(config) {
                     return;
                 }
 
-                const regeneratedCode = await generator.regenerate(body.mermaid, body.instruction);
+                // theme 净化规则与 /api/generate 一致：typeof 守卫一并复用
+                const theme = typeof body.theme === 'string' && body.theme === 'dark' ? 'dark' : 'light';
+
+                const regeneratedCode = await generator.regenerate(body.mermaid, body.instruction, theme);
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({

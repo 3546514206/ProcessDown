@@ -100,17 +100,15 @@ const mermaidRender = {
     },
 
     applyThemeClass() {
-        const theme = localStorage.getItem('theme') || 'dark';
+        // 与 components.setTheme 同源：全站主题（state.siteTheme）驱动画布背景类，
+        // 渲染成功后兜底重贴一次（innerHTML 只换子节点，正常不冲掉本类）。
+        // 走 getSiteTheme（运行时真源）而非读存储：持久化失败时两者会分叉
+        const theme = window.app && window.app.getSiteTheme
+            ? window.app.getSiteTheme()
+            : 'light';
 
-        this.container.classList.remove('bg-dark', 'bg-light', 'bg-transparent');
-
-        if (theme === 'dark') {
-            this.container.classList.add('bg-dark');
-        } else if (theme === 'light') {
-            this.container.classList.add('bg-light');
-        } else {
-            this.container.classList.add('bg-transparent');
-        }
+        this.container.classList.remove('bg-dark', 'bg-light');
+        this.container.classList.add(theme === 'light' ? 'bg-light' : 'bg-dark');
     },
 
     getSvg() {

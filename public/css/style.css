@@ -16,6 +16,48 @@
     --error-color: #f44336;
     --btn-hover-bg: #2a2a4e;
     --separator-width: 6px;
+    /* 以下为深色默认值：body 底色、禁用按钮、登录遮罩蒙层。
+       收敛成变量是为了让 html[data-theme="light"] 能整体翻成浅色。 */
+    --bg-canvas: #0a0b16;
+    --btn-disabled-bg: #444;
+    --btn-disabled-text: #888;
+    --btn-disabled-icon: #fff;
+    --login-mask-bg: rgba(10, 11, 22, 0.92);
+    --accent-glow: rgba(91, 156, 245, 0.3);
+}
+
+/* 全站浅色主题：顶栏按钮切换，写入 <html data-theme="light">
+   （localStorage['site-theme']）。仅覆盖变量值，不动选择器结构，
+   因此深色（默认）渲染路径与引入本块之前逐像素等价。
+   画布背景（.mermaid-container.bg-*）由 components.setTheme 随同一
+   site-theme 状态驱动，无独立开关。 */
+html[data-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f3f4f8;
+    --bg-tertiary: #e9ebf2;
+    --bg-hover: #e4ebfa;
+    --bg-canvas: #eceef4;
+    --text-primary: #1f2333;
+    --text-secondary: #5a6076;
+    --accent-color: #2563eb;
+    --accent-hover: #1d4ed8;
+    --border-color: #d5d9e4;
+    --border-strong: #c2c7d6;
+    /* 深色的 success/warning/error 是为深底调的亮色，直接放白底上对比度不足，
+       换成同色系加深版。warning 加深到 #8a5300：#b26a00 对白底仅约 3.9:1，
+       状态栏 11px/13px 小字场景需要 >= 4.5:1 */
+    --success-color: #2e7d32;
+    --warning-color: #8a5300;
+    --error-color: #d32f2f;
+    --btn-hover-bg: #dee3ee;
+    --btn-disabled-bg: #c9cedb;
+    --btn-disabled-text: #8a90a3;
+    --btn-disabled-icon: #8a90a3;
+    --login-mask-bg: rgba(236, 238, 244, 0.92);
+    --accent-glow: rgba(37, 99, 235, 0.25);
+    /* 原生滚动条与表单控件跟随浅色。深色侧刻意不设 color-scheme，
+       保持既有渲染不变。 */
+    color-scheme: light;
 }
 
 * {
@@ -26,7 +68,7 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    background: #0a0b16;
+    background: var(--bg-canvas);
     color: var(--text-primary);
     height: 100vh;
     overflow: hidden;
@@ -182,7 +224,6 @@ body {
 
 .view-controls,
 .zoom-controls,
-.bg-controls,
 .export-controls {
     display: flex;
     align-items: center;
@@ -258,11 +299,6 @@ body {
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.1);
 }
 
-.mermaid-container.bg-transparent {
-    background: transparent;
-    box-shadow: none;
-}
-
 .render-error {
     color: var(--error-color);
     text-align: center;
@@ -315,6 +351,11 @@ body {
     opacity: 0.5;
 }
 
+/* 同 .drawer-empty：浅色下 opacity .5 跌破可读线，仅浅色回调 */
+html[data-theme="light"] .placeholder {
+    opacity: 0.75;
+}
+
 .mermaid-code {
     display: none;
 }
@@ -343,12 +384,14 @@ body {
 
 .btn-primary:hover {
     background: var(--accent-hover);
-    box-shadow: 0 2px 8px rgba(91, 156, 245, 0.3);
+    /* 光晕色随主题：rgba(91,156,245) 是深色 accent 的残留色相，
+       浅色 accent 换成了蓝紫更少的 #2563eb，光晕同步收敛成变量 */
+    box-shadow: 0 2px 8px var(--accent-glow);
 }
 
 .btn-primary:disabled {
-    background: #444;
-    color: #888;
+    background: var(--btn-disabled-bg);
+    color: var(--btn-disabled-text);
     cursor: not-allowed;
     box-shadow: none;
 }
@@ -570,18 +613,12 @@ body {
    SVG icon fills
    ======================================== */
 
-.zoom-controls .icon-btn svg,
-.bg-controls .icon-btn svg {
+.zoom-controls .icon-btn svg {
     fill: var(--text-secondary);
 }
 
-.zoom-controls .icon-btn:hover svg,
-.bg-controls .icon-btn:hover svg {
+.zoom-controls .icon-btn:hover svg {
     fill: var(--text-primary);
-}
-
-.bg-controls .icon-btn.active svg {
-    fill: #fff;
 }
 
 /* ========================================
@@ -708,6 +745,12 @@ body {
     opacity: 0.7;
 }
 
+/* 浅色下 .7 档衰减后跌破可读线，回调到 .85。深色侧保持原值不动：
+   本规则带 html[data-theme="light"] 前缀，data-theme 非 light 时整条不命中 */
+html[data-theme="light"] .drawer-empty {
+    opacity: 0.85;
+}
+
 .drawer-group-title {
     font-size: 11px;
     font-weight: 600;
@@ -716,6 +759,11 @@ body {
     letter-spacing: 0.6px;
     padding: 12px 8px 4px;
     opacity: 0.7;
+}
+
+/* 同 .drawer-empty：浅色 11px 小字 + opacity .7 跌破可读线，仅浅色回调 */
+html[data-theme="light"] .drawer-group-title {
+    opacity: 0.9;
 }
 
 .history-item {
@@ -754,6 +802,11 @@ body {
     opacity: 0.8;
 }
 
+/* 同 .drawer-group-title：浅色 11px 小字 + opacity 衰减跌破可读线，仅浅色回调 */
+html[data-theme="light"] .history-time {
+    opacity: 0.9;
+}
+
 /* ========================================
    Login Mask
    ======================================== */
@@ -761,7 +814,7 @@ body {
 .login-mask {
     position: fixed;
     inset: 0;
-    background: rgba(10, 11, 22, 0.92);
+    background: var(--login-mask-bg);
     z-index: 2000;
     display: flex;
     align-items: center;
