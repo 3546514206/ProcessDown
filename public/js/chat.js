@@ -9,6 +9,16 @@
  * 挂在 window.chat，供 app.js 在登录后 init。
  */
 
+// 空会话示例 chip 的高级提示词：与 index.html 里 .example-chip 的
+// data-example-key 一一对应。按钮上只显示短名，点击直接把完整提示词
+// 填入输入框并发送，让新用户零门槛看到高完成度的图。
+const EXAMPLE_PROMPTS = {
+    'c4-ecommerce': '用 C4Container 画一个大型跨境电商平台的容器级架构图：外部角色包含买家、卖家、平台运营和第三方支付方；系统边界内至少包含 Web 前端、移动 App、API 网关、用户中心、商品服务、订单服务、库存服务、支付服务、搜索服务、推荐服务、消息队列、Redis 缓存、MySQL 主从数据库、对象存储等 12 个以上容器，为每个容器标注技术栈（如 Node.js、Kafka、Elasticsearch），并画出买家下单、卖家管理商品、支付回调、库存扣减等核心关系链，形成一张可直接用于架构评审的全景图。',
+    'mindmap-genai': '用 mindmap 画一棵生成式 AI 技术全景思维导图：根节点为生成式 AI，一级分支至少 6 个，包括大语言模型、多模态模型、提示词工程、RAG 检索增强、智能体 Agent、训练与微调、安全与对齐、应用生态；每个一级分支下再展开 3 到 5 个二级要点（如大语言模型下覆盖 GPT 系列、开源模型、上下文窗口、推理优化），二级要点下再补充关键技术与代表产品名词，全图不少于 50 个节点，形成层次分明、覆盖面完整的技术知识树。',
+    'git-enterprise-flow': '用 gitGraph 画一个规范的企业级 Git 分支演进图：从 main 主干的初始提交开始，先后拉出 develop 集成分支、feature/login、feature/payment、feature/search 三个功能分支、release/2.1.0 预发布分支，以及线上紧急修复用的 hotfix/2.0.1 分支。展示至少 15 次提交，包含各功能分支向 develop 的合并、develop 向 release 的合并、release 与 hotfix 回归 main 并打上 v2.0.1 和 v2.1.0 版本标签、从 main 摘取提交的 cherry-pick 操作，完整呈现主干开发工作流的分支全景。',
+    'seq-spring-bean': '用 sequenceDiagram 画一张 Spring IoC 容器启动与获取 bean 的完整时序图：参与者包含客户端、ApplicationContext、BeanDefinitionRegistry、BeanFactory、BeanPostProcessor、目标 Bean 共 6 个。时序覆盖容器启动时加载配置并注册 BeanDefinition、客户端 getBean 触发懒加载、反射构造实例、属性注入 @Autowired、Aware 接口回调、BeanPostProcessor 前置处理、InitializingBean 的 afterPropertiesSet 与 @PostConstruct 初始化、后置处理生成 AOP 代理后返回代理对象。要求用 alt 区分“单例已存在直接返回”与“首次创建”两条分支，用 loop 表达属性注入时的循环依赖检查，用 note over 标注各扩展点（如 @PostConstruct 的位置），全程用 activate/deactivate 表达生命线并开启 autonumber，形成一张可直接用于源码讲解的 bean 生命周期全景图。'
+};
+
 const chat = {
     messages: [],          // [{role:'user'|'assistant', content, thinking?}]
     isStreaming: false,
@@ -98,9 +108,10 @@ const chat = {
     bindExampleChips() {
         document.querySelectorAll('.example-chip').forEach(chip => {
             chip.addEventListener('click', () => {
-                this.el.textarea.value = chip.dataset.prompt;
-                this.el.textarea.focus();
-                this.el.textarea.dispatchEvent(new Event('input'));
+                const prompt = EXAMPLE_PROMPTS[chip.dataset.exampleKey];
+                if (!prompt) return;  // key 拼错时静默不发送，避免误导性兜底
+                this.el.textarea.value = prompt;
+                this.sendMessage();
             });
         });
     },
