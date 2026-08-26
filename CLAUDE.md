@@ -71,8 +71,24 @@ node tests/prompt-eval/eval.js    # 提示词类型识别评估器（48 用例�
 ### PNG 导出（`src/services/export.js`）
 服务端 SVG->PNG，基于 `@resvg/resvg-wasm`（纯 WASM，无原生依赖--`node_modules` 可在 macOS/Windows/Linux 之间直接拷贝）。WASM 初始化和内嵌的思源黑体（`assets/fonts/SourceHanSansSC-Regular.otf`）是模块级单例 promise（懒加载，失败可重试）。SVG 中所有 `font-family` 声明都被统一归一化为思源黑体，保证中文在各平台一致渲染。这正是 `prompts/system.txt` 禁止节点文本使用 HTML 标签的原因：resvg 不渲染 HTML 标签，导出 PNG 时这些内容会消失。唯一例外是换行统一用 `<br/>`（mermaid 与 resvg 都支持）。前端 Mermaid 以 `securityLevel: 'loose'` 运行以获得渲染灵活性，而提示词把输出约束为纯文本--两者相容，并不矛盾。`/api/export/png` 受 `authUser` 保护，前端 `export.js` 走 `apiFetch`（带 Bearer，401 清登录态弹遮罩）。
 
+### Visio 导出（`public/vendor/mermaid-to-visio.esm.js` + `public/js/export.js`）
+前端纯客户端 .vsdx 导出链路。库走 vendored，不引入 npm 依赖、零服务器改动、零鉴权清单改动。`.vsdx` 本质是 OPC ZIP 包，库消费**渲染后的 SVG DOM**（因此对全部图表类型都能做几何级导出）。Vendored 文件 `public/vendor/mermaid-to-visio.esm.js`（24KB ESM，顶部 MIT 来源注释），首次点击导出才 dynamic import `/vendor/mermaid-to-visio.esm.js?v=0.1.0`，命中 `public/vendor/` 现有的 `?v=` 强缓存约定。导出菜单的"Visio"按钮与 PNG/SVG 并列在 `public/index.html` 的 `.export-controls` 内（`#btn-export-visio`）。MIME 是 `application/vnd.ms-visio.drawing.12`，文件名 `flowchart-<timestamp>.vsdx`。
+
+`exportModule.exportVisio()`（`public/js/export.js`）的关键约束（**htmlLabels:false 是成败关键**：库只解析 `<text>`，画布 SVG 默认会把节点文字塞进 `<foreignObject><div>`，必须**离屏 holder 里**用 `flowchart: { htmlLabels: false }` 重渲染一次）。其他实现细节：
+
+- 取最新图源（`window.chat.currentMermaid`，与 diagram.json 同源），不从画布 SVG 反推；
+- mermaid 全局配置改用 `getConfig()` 整盘快照 + 深合并覆写，try/finally 还回去——mermaid 是全局单例，不还污染后续画布渲染；
+- 离屏 holder 用 `position:fixed;left:-99999px;visibility:hidden`——不能 `display:none`，库内部 `getBBox` 按规范返回 0 矩形；
+- 配置改完等 mermaid 拿到一份新 ID（`vsdx-<seq>-<ts>`），避免与画布渲染的同 ID 候选串冲突；
+- `_visioBusy` 模块级守卫串行化并发点击——mermaid.render 不是真正的并发安全（同 process 同时刻同 ID 候选串冲突）；
+- `_loadVisioLib` 失败 promise 必须清缓存（一次 404/网络瞬断不能永久废掉按钮）。
+
+**测试覆盖**：`tests/unit/frontendExportVisio.smoke.test.js`（6 项，DOM/按钮存在 + 空 mermaid 早返 + 配置覆盖与还原 + 流式期间禁导 + 库抛错 finally 兜底）+ `frontendExportVisio.edge.test.js`（6 项，lib 失败重试可恢复 + mermaid 缺失降级 + 并发串行化 + 文件名与 MIME + chat 缺失降级 + svg 节点缺失），共 12 项全过。**手动冒烟**：`tests/manual/visio-export.md` + `tests/manual/visio-export.js`（jsdom 端到端跑真库，校验 9 个必备 OPC part 齐全 + `xmllint` 校验合法）+ `tests/manual/visio-export-smoke.html`（浏览器人眼复核）。
+
+**二期展望**（不在本期内）：语义级导出——fork 该 MIT 库或自研约 500–800 行，利用 vendored mermaid 11.16.1 内的 `mermaidAPI.getDiagramFromText()` 拿到 `{db, parser}`，flowchart 的 `db.getData()` 给出 nodes[]/edges[]（注意：`db.getVertices()` 在 11.16.1 的 flowchart-v2 上已不可用，必须走 `getData()`；getter 在原型链上，`Object.keys()` 枚举不到），输出带 1-D 动态连接线（BeginX/EndX + Connects 胶合段）的 vsdx，实现"拖动节点连线跟随"。
+
 ### 前端（`public/js/`，无框架）
-挂在 `window` 上的模块：`app`（鉴权/历史抽屉/状态栏/配置加载/全站主题切换）、`chat`（对话式 UI 全部逻辑，最大模块）、`mermaidRender`（渲染 + 带行上下文的结构化错误诊断；`silent` 模式供流式节流渲染静默容错，失败保留上次结果不弹错）、`components`（缩放/平移/背景（随全站主题联动，无独立按钮）/预览区全屏/整页全屏/分隔条/快捷键）、`exportModule`（PNG 走服务端接口含 1x/2x/3x 缩放菜单，SVG 走客户端 Blob）。通过 `window.*` 全局变量和 `localStorage` 通信。样式 `public/css/style.css` + `chat.css`（深/浅双主题由 `<html data-theme>` 驱动）。
+挂在 `window` 上的模块：`app`（鉴权/历史抽屉/状态栏/配置加载/全站主题切换）、`chat`（对话式 UI 全部逻辑，最大模块）、`mermaidRender`（渲染 + 带行上下文的结构化错误诊断；`silent` 模式供流式节流渲染静默容错，失败保留上次结果不弹错）、`components`（缩放/平移/背景（随全站主题联动，无独立按钮）/预览区全屏/整页全屏/分隔条/快捷键）、`exportModule`（PNG 走服务端接口含 1x/2x/3x 缩放菜单，SVG 走客户端 Blob，Visio 走 vendored 库动态 import）。通过 `window.*` 全局变量和 `localStorage` 通信。样式 `public/css/style.css` + `chat.css`（深/浅双主题由 `<html data-theme>` 驱动）。
 
 - **chat 模块**（`chat.js`）：欢迎态示例 chip、自适应高度输入框（Enter 发送 / Shift+Enter 换行）、发送/停止按钮切换、per-round 操作行（查看此图/复制代码/重新生成--重放**本轮**指令而非全局最后一条 user）、思考过程折叠块（终态折叠并标注秒数）、回到底部按钮。
 - **流式前端**：`fetch` + `ReadableStream` 手动解析 SSE（需带 Bearer 头，不能用 EventSource），`AbortController` 停止生成，`finish` 包装保证 done/error/abort 终态互斥只跑一次，连接被反代切断等断连场景有兜底 error。`streamGenerate` 的 401 处理**刻意与 `apiFetch` 不同**：不清聊天 DOM（已生成内容已落盘可恢复），仅清登录态弹遮罩。
@@ -95,6 +111,7 @@ node tests/prompt-eval/eval.js    # 提示词类型识别评估器（48 用例�
 - **新增 Mermaid 图表类型时，需同步三处**：`prompts/system.txt`、`extractor.js` 的 `isMermaidCode` 模式列表、`extractMermaidCode` 中的关键字正则。
 - **CORS `Allow-Headers` 含 `Authorization`**（`cors.js`），跨域部署时 Bearer 预检才能通过。同源（默认，前端由本服务 serve）不触发 CORS。
 - **路径穿越防御**：username 走 `^[a-zA-Z0-9_-]{3,32}$` 白名单、sessionId 走 UUID 正则（`isValidId`），sessionId 操作始终限定在当前用户的 `sessions/` 目录下，跨用户不可访问他人会话。
+- **Visio 导出必须 `htmlLabels:false`**：`@klyratech/mermaid-to-visio` 只解析 `<text>`，而画布上的 mermaid SVG 默认会把节点文字塞进 `<foreignObject><div>`，直接喂画布 SVG 会导出**空框**。必须在离屏 holder 里用 `mermaid.initialize({ flowchart: { htmlLabels: false } })` 重渲染一次，让文字变成 `<text>`。配置改完用 `getConfig()` 整盘快照 + try/finally 还回去，否则污染后续画布渲染。
 - **沿用周围的注释风格**：本代码库偏好解释**为什么**的注释（如 `envInt` 关于 NaN 与 `??` 的说明、`parseBody` 关于 buffer 拼合的理由、`max_tokens` 省略的原因、`login` 守卫位置的理由、`run/users/` 不清理的约束）。编辑时请保留。
 - **测试约定**：用 `node:test`，mock req/res 风格（见 `tests/unit/`）。`server/index.js` require 即 boot+listen 无法直接导入，涉及路由保护清单的测试用源码正则提取 + 真实 `authUser`+`createRouter` dispatch 组合（见 `protectedRoutes.edge.test.js`）；前端 DOM 逻辑有 jsdom 冒烟测试（`frontend*.smoke.test.js` 等）。**当前套件是红的**：422 项中 33 项失败，全部来自先于实现落下的测试--`editMessage.route.test.js`（测尚不存在的 `/api/message/edit` 路由）与 `frontendEditor.smoke.test.js`（测尚不存在的 `window.chat._installEditor`）；实现落地前不要为了"变绿"删测试或粉饰数字。另有 `tests/prompt-eval/`（提示词类型识别评估器，48 用例）、`tests/e2e/`、`tests/manual/`（手动冒烟文档）。
 - **jsdom 依赖隐患**：`frontendButtons.smoke.test.js`、`frontendEditor.smoke.test.js`、`frontendSiteTheme.smoke.test.js` 三个文件 `require('jsdom')`，但 `package.json` 没有 `devDependencies` 声明、lock 文件也无记录--jsdom 只是碰巧装在本地 `node_modules`，fresh `npm ci` 后这些测试必挂。

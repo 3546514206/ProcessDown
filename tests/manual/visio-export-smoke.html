@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<!--
+Visio 导出浏览器自检 HTML（单文件可双击打开）
+
+目的：人在浏览器里跑通一遍 vendored mermaid + vendored @klyratech/mermaid-to-visio，
+确认生成 .vsdx 并下载。jsdom 端到端测试通过后这里是人眼最后一道关。
+
+为什么要这个文件：
+- jsdom 的 SVG 测量 API 是 polyfill 过的；真实浏览器走原生路径，结果可能更准
+- mermaid 11 在真实浏览器里 flowchart 即便 htmlLabels:false 也产 <text>（与 jsdom 不同）
+- 在浏览器里能看到 vsdx 字节流（base64）和下载按钮，确认 UI 流程 OK
+
+用法：
+1. 启动服务：node src/server/index.js
+2. 浏览器打开 http://localhost:3000/vendor/../tests/manual/visio-export-smoke.html
+   或直接双击这个文件（需要本地服务或直接 file:// 都行——vendor 路径已写相对）
+3. 点"渲染"看每张图的输出，点"下载"拿 .vsdx
+
+依赖：
+- public/vendor/mermaid.min.js （必须由本地服务或相对路径提供）
+- public/vendor/mermaid-to-visio.esm.js （同上）
+
+如果是从仓库根目录双击打开本文件，浏览器以 file:// 加载；动态 import 的 vendor
+路径按相对 ../vendor/ 解析。若改放到别处，调整脚本里的 vendor 路径。
+-->
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visio 导出浏览器自检</title>
+    <style>
+        body { font-family: -apple-system, sans-serif; padding: 24px; background: #fafafa; color: #222; max-width: 1100px; margin: 0 auto; }
+        h1 { margin: 0 0 12px; }
+        .hint { color: #666; font-size: 13px; margin-bottom: 24px; }
+        .case { background: #fff; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .case h2 { margin-top: 0; font-size: 16px; }
+        .case .row { display: flex; gap: 8px; margin-bottom: 8px; }
+        .case pre { background: #1e1e36; color: #d4d4d4; padding: 12px; border-radius: 4px; overflow: auto; font-size: 12px; max-height: 240px; }
+        .case .status { font-family: ui-monospace, monospace; font-size: 12px; }
+        .case .download-btn { background: #2563eb; color: white; border: 0; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .case .download-btn[disabled] { background: #94a3b8; cursor: not-allowed; }
+        .case textarea { width: 100%; min-height: 80px; padding: 8px; font-family: ui-monospace, monospace; font-size: 12px; border: 1px solid #d4d4d4; border-radius: 4px; }
+        .error { color: #b91c1c; }
+    </style>
+    <!-- 注意：本 HTML 在 file:// 下打开时，动态 import 的相对路径会因浏览器不同而有差异。
+         推荐用本地服务跑（http://localhost:3000/tests/manual/...），下方脚本按
+         '相对仓库根目录' 写路径。如果要 file:// 打开，把 vendor/ 路径改成绝对路径。 -->
+    <script src="../public/vendor/mermaid.min.js?v=11.16.1"></script>
+</head>
+<body>
+    <h1>Visio 导出浏览器自检</h1>
+    <p class="hint">
+        跑 vendored mermaid 11.16.1 + vendored @klyratech/mermaid-to-visio v0.1.0，
+        渲染 3 张代表图，生成 .vsdx 字节流并提供下载。浏览器走真实路径，结果比
+        <code>tests/manual/visio-export.js</code> 的 jsdom 端到端更准。
+    </p>
+
+    <div class="case" data-case="flowchart">
+        <h2>1. Flowchart（中文节点）</h2>
+        <textarea>flowchart LR
+    A[用户登录] --> B[验证密码]
+    B -->|通过| C[进入主页]
+    B -->|失败| D[提示错误]</textarea>
+        <div class="row">
+            <button class="download-btn" data-action="render">渲染</button>
+            <button class="download-btn" data-action="download" disabled>下载 .vsdx</button>
+            <span class="status"></span>
+        </div>
+        <pre data-b64>(no output yet)</pre>
+    </div>
+
+    <div class="case" data-case="sequence">
+        <h2>2. Sequence Diagram</h2>
+        <textarea>sequenceDiagram
+    participant U as 用户
+    participant S as 认证服务器
+    U->>S: 提交登录
+    S-->>U: 返回结果</textarea>
+        <div class="row">
+            <button class="download-btn" data-action="render">渲染</button>
+            <button class="download-btn" data-action="download" disabled>下载 .vsdx</button>
+            <span class="status"></span>
+        </div>
+        <pre data-b64>(no output yet)</pre>
+    </div>
+
+    <div class="case" data-case="state">
+        <h2>3. State Diagram</h2>
+        <textarea>stateDiagram-v2
+    [*] --> 待处理
+    待处理 --> 处理中
+    处理中 --> 完成
+    完成 --> [*]</textarea>
+        <div class="row">
+            <button class="download-btn" data-action="render">渲染</button>
+            <button class="download-btn" data-action="download" disabled>下载 .vsdx</button>
+            <span class="status"></span>
+        </div>
+        <pre data-b64>(no output yet)</pre>
+    </div>
+
+    <script>
+    // === 浏览器自检脚本 ===
+    // 复制 exportVisio 的真逻辑到一个独立函数（不依赖 app.js / chat.js，
+    // 这样本文件可以独立运行）。vendor lib 通过 dynamic import 加载，
+    // 这是 export.js 用的同一条路径。
+    (function () {
+        'use strict';
+
+        const _visioLibPromise = (() => {
+            // 与 export.js 同样的 vendor URL——保证 ?v= 强缓存约定一致
+            return import('../public/vendor/mermaid-to-visio.esm.js?v=0.1.0').then((m) => m);
+        })();
+
+        async function exportVisioFor(code, title) {
+            // 复用 exportVisio 的核心：保存 prev config → 设 htmlLabels:false →
+            // 离屏 holder 重渲染 → 喂给 svgElementToVsdx → 还原 config。
+            const holder = document.createElement('div');
+            holder.style.cssText = 'position:fixed;left:-99999px;top:0;visibility:hidden;pointer-events:none';
+            document.body.appendChild(holder);
+
+            let prevConfig = null;
+            try {
+                prevConfig = window.mermaid.getConfig();
+                const fc = (prevConfig.flowchart && typeof prevConfig.flowchart === 'object') ? prevConfig.flowchart : {};
+                window.mermaid.initialize({
+                    ...prevConfig,
+                    flowchart: { ...fc, htmlLabels: false }
+                });
+
+                const { svgElementToVsdx } = await _visioLibPromise;
+                const renderId = 'vsdx-smoke-' + Date.now();
+                const result = await window.mermaid.render(renderId, code);
+                const svgString = result && result.svg;
+                if (!svgString) throw new Error('mermaid 未产出 svg');
+                holder.innerHTML = svgString;
+                const svgEl = holder.querySelector('svg');
+                if (!svgEl) throw new Error('未找到 svg 根');
+
+                const out = await svgElementToVsdx(svgEl, { title });
+                const bytes = out && out.bytes;
+                if (!bytes) throw new Error('库未产出 bytes');
+                return { bytes, stats: out.stats, title };
+            } finally {
+                if (prevConfig) {
+                    try { window.mermaid.initialize(prevConfig); } catch (_) {}
+                }
+                if (holder.parentNode) holder.parentNode.removeChild(holder);
+            }
+        }
+
+        // 全局初始化一次（与 export.js 同套配置）
+        window.mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'loose',
+            theme: 'default',
+            flowchart: { htmlLabels: false, useMaxWidth: true },
+            sequence: { useMaxWidth: true }
+        });
+
+        // 绑按钮
+        document.querySelectorAll('.case').forEach((card) => {
+            const label = card.getAttribute('data-case');
+            const ta = card.querySelector('textarea');
+            const renderBtn = card.querySelector('[data-action="render"]');
+            const downloadBtn = card.querySelector('[data-action="download"]');
+            const statusEl = card.querySelector('.status');
+            const b64El = card.querySelector('[data-b64]');
+            let lastBytes = null;
+
+            renderBtn.addEventListener('click', async () => {
+                renderBtn.disabled = true;
+                statusEl.textContent = '渲染中...';
+                b64El.textContent = '(rendering...)';
+                try {
+                    const r = await exportVisioFor(ta.value, 'flowchart-' + label);
+                    lastBytes = r.bytes;
+                    const b64 = bytesToBase64(r.bytes);
+                    b64El.textContent = b64;
+                    statusEl.textContent = 'OK · ' + r.bytes.length + ' bytes · shapes=' + r.stats.shapes + ' texts=' + r.stats.texts;
+                    statusEl.className = 'status';
+                    downloadBtn.disabled = false;
+                } catch (e) {
+                    statusEl.textContent = '失败：' + (e && e.message || String(e));
+                    statusEl.className = 'status error';
+                    b64El.textContent = '(error)';
+                    downloadBtn.disabled = true;
+                } finally {
+                    renderBtn.disabled = false;
+                }
+            });
+
+            downloadBtn.addEventListener('click', () => {
+                if (!lastBytes) return;
+                const blob = new Blob([lastBytes], { type: 'application/vnd.ms-visio.drawing.12' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = label + '-' + Date.now() + '.vsdx';
+                a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            });
+        });
+
+        function bytesToBase64(bytes) {
+            // 浏览器原生 btoa 不吃大串，分片
+            let s = '';
+            const chunk = 0x8000;
+            for (let i = 0; i < bytes.length; i += chunk) {
+                s += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+            }
+            return btoa(s);
+        }
+    })();
+    </script>
+</body>
+</html>
