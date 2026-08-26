@@ -15,6 +15,26 @@ const { SessionStore } = require('../services/sessionStore');
 const { UserStore } = require('../services/userStore');
 const { validateGenerateRequest } = require('../middleware/validator');
 const { extractMermaidCode, autoFixMermaidCode } = require('../services/extractor');
+const { isValidWelcomeKey, loadWelcomeCode } = require('../services/welcomeCode');
+
+// 校验 + 解析请求体里的 welcomeKey：白名单命中且对应 .md 文件能抽出代码块。
+// 返回 string|null，null 时调用方继续走原 LLM 路径（不作弊）。welcomeKey
+// 非白名单或文件缺失/损坏 = 400 拒绝，绝不静默回退——避免用户手动乱填 key
+// 时无声走原路径产生"看似成功实际是 LLM 真生成"的混淆行为。
+function resolveWelcomeCode(body) {
+    if (body.welcomeKey === undefined || body.welcomeKey === null) return { ok: true, code: null };
+    if (typeof body.welcomeKey !== 'string') {
+        return { ok: false, message: '"welcomeKey" must be a string' };
+    }
+    if (!isValidWelcomeKey(body.welcomeKey)) {
+        return { ok: false, message: '"welcomeKey" is not a recognized example key' };
+    }
+    const code = loadWelcomeCode(body.welcomeKey);
+    if (!code) {
+        return { ok: false, message: `welcome code not found for key "${body.welcomeKey}"` };
+    }
+    return { ok: true, code };
+}
 
 function createRouter(config) {
     const generator = new GeneratorService(config);
@@ -371,6 +391,19 @@ function createRouter(config) {
                     return;
                 }
 
+                // welcomeKey（可选）：白名单 + 文件存在性校验。
+                // 命中则从 prompts/welcome/<key>.md 抽出的代码塞给 LLM，
+                // 让首屏示例零翻车；用户自主输入不传此字段，走原路径。
+                const welcome = resolveWelcomeCode(body);
+                if (!welcome.ok) {
+                    res.writeHead(400, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({
+                        error: 'Validation Error',
+                        message: welcome.message
+                    }));
+                    return;
+                }
+
                 const { prompt, mermaid: currentMermaid, sessionId } = body;
                 // theme 净化在路由层而非 validator.js：不加 400 校验以兼容不带
                 // theme 的旧客户端，非法/缺失一律回落 light（与前端默认一致）。
@@ -402,8 +435,10 @@ function createRouter(config) {
                 // restart) is transparently recreated with empty history
                 const history = sessionStore ? sessionStore.readHistory(sessionId) : [];
 
-                // Generate Mermaid code with multi-turn context
-                const generatedCode = await generator.generate(prompt, currentMermaid, history, theme);
+                // Generate Mermaid code with multi-turn context.
+                // welcome.code 命中白名单时由 generator 把它作为"目标输出"
+                // 塞进 messages，让首屏示例翻车率降到 0；null 时原路径不变。
+                const generatedCode = await generator.generate(prompt, currentMermaid, history, theme, welcome.code);
 
                 let responseHistory = [];
                 if (sessionStore) {
@@ -451,6 +486,14 @@ function createRouter(config) {
                 return;
             }
 
+            // 与 /api/generate 同源：白名单命中才注入预制代码，否则原 LLM 路径不变
+            const welcome = resolveWelcomeCode(body);
+            if (!welcome.ok) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: 'Validation Error', message: welcome.message }));
+                return;
+            }
+
             const { prompt, mermaid: currentMermaid, sessionId } = body;
             // theme 净化规则与 /api/generate 一致：typeof 守卫一并复用
             const theme = typeof body.theme === 'string' && body.theme === 'dark' ? 'dark' : 'light';
@@ -490,6 +533,8 @@ function createRouter(config) {
                     onThinking: (delta) => send({ type: 'thinking', delta }),
                     onContent: (delta) => send({ type: 'content', delta }),
                     onDone: ({ mermaid, fixes, extracted }) => {
+                        // welcome.code 已由 generator 在 messages 里注入，LLM 流式
+                        // 输出会沿用预制代码；onDone 拿到的 mermaid 就是最终落盘的图。
                         if (sessionStore) {
                             try {
                                 sessionStore.append(sessionId, prompt, mermaid);
@@ -502,7 +547,7 @@ function createRouter(config) {
                         }
                         send({ type: 'done', mermaid, fixes, extracted });
                     }
-                }, controller.signal, theme);
+                }, controller.signal, theme, welcome.code);
 
                 if (!res.writableEnded) {
                     res.write('data: [DONE]\n\n');

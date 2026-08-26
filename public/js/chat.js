@@ -30,6 +30,7 @@ const chat = {
     _activeCodePre: null,  // 当前流式中那条 AI 消息的 <textarea> 引用，setStreaming(true) 时上锁
     _diagramSaveTimer: null,
     _diagramSavePending: null,  // {sessionId, code} - 节流的待保存草稿
+    _pendingWelcomeKey: null,  // 本轮 chip 触发的 example key, sendMessage 消费后清空, 流式期间透传给后端
 
     init() {
         this.el = {
@@ -108,8 +109,15 @@ const chat = {
     bindExampleChips() {
         document.querySelectorAll('.example-chip').forEach(chip => {
             chip.addEventListener('click', () => {
-                const prompt = EXAMPLE_PROMPTS[chip.dataset.exampleKey];
+                const key = chip.dataset.exampleKey;
+                const prompt = EXAMPLE_PROMPTS[key];
                 if (!prompt) return;  // key 拼错时静默不发送，避免误导性兜底
+                // 标记本轮为"chip 触发"：sendMessage 会把这个 key 透传给后端，
+                // 后端从 prompts/welcome/<key>.md 抽出预制代码注入 LLM，让首屏
+                // 示例零翻车。关键：UI 上 textarea 仍只填入 prompt 文本（用户看
+                // 到的就是普通输入），预制代码绝不显示在界面——流式渲染的输出由
+                // LLM 沿用预制代码生成，UI 体验与正常生成无差别。
+                this._pendingWelcomeKey = key;
                 this.el.textarea.value = prompt;
                 this.sendMessage();
             });
@@ -244,9 +252,18 @@ const chat = {
 
     // ---- 发送 ----
     async sendMessage() {
-        if (this.isStreaming) return; // isStreaming 守卫防重复
+        // 早返路径清空：流式期间点击 chip B 想"换下一张"会被 isStreaming 拦住，
+        // 空 prompt 也直接 return——两条路径都不能留下 stale _pendingWelcomeKey，
+        // 否则后续用户改 textarea 文本再发送会把 stale 透传给后端"作弊"——
+        // 这是"用户自主输入禁止作弊"约束的客户端兜底
+        if (this.isStreaming) { this._pendingWelcomeKey = null; return; }
         const prompt = this.el.textarea.value.trim();
-        if (!prompt) return;
+        if (!prompt) { this._pendingWelcomeKey = null; return; }
+
+        // chip 触发的本轮 welcomeKey：取出后立即清空，避免下一轮（用户输入）
+        // 误带上同一 key 偷跑预制代码——这是"用户自主输入禁止作弊"约束的关键。
+        const welcomeKey = this._pendingWelcomeKey;
+        this._pendingWelcomeKey = null;
 
         this.appendUserMessage(prompt);
         // 新一轮开始前先 flush 上一轮的挂起 PATCH：flow 是 _onCodeEdited -> 600ms 防抖 ->
@@ -281,6 +298,7 @@ const chat = {
             prompt,
             sessionId,
             currentMermaid: this.currentMermaid,
+            welcomeKey,
             onThinking: (delta) => {
                 aiRefs.thinkBlock.hidden = false;
                 aiRefs.thinkContent.textContent += delta;
@@ -567,6 +585,10 @@ const chat = {
         this.messages = [];
         this.currentMermaid = '';
         this._activeCodePre = null;
+        // 跨会话边界清空：防止"上一会话流式期间点击了 chip B 但被 isStreaming 拦住"
+        // 把 stale welcomeKey 带进新会话——clear 后用户在新会话里键入任意 prompt 都
+        // 必须老老实实走 LLM 真生成路径
+        this._pendingWelcomeKey = null;
         // 清空输入框，杜绝跨会话/跨用户的草稿残留（旧 app.js 的 inputPrompt 清空守卫等价）
         if (this.el.textarea) {
             this.el.textarea.value = '';
@@ -632,7 +654,7 @@ const chat = {
      * 回调：onThinking(delta)/onContent(delta)/onDone({mermaid,fixes})/onError(msg,hint)/onAbort()。
      * 停止生成：外部调 stopGenerate() -> AbortController.abort() -> reader 抛出 -> onAbort。
      */
-    async streamGenerate({ prompt, sessionId, currentMermaid, onThinking, onContent, onDone, onError, onAbort }) {
+    async streamGenerate({ prompt, sessionId, currentMermaid, welcomeKey, onThinking, onContent, onDone, onError, onAbort }) {
         this._abortController = new AbortController();
         const token = localStorage.getItem('pd_token');
 
@@ -648,6 +670,9 @@ const chat = {
                     prompt,
                     mermaid: currentMermaid || undefined,
                     sessionId: sessionId || undefined,
+                    // chip 触发时才传：后端命中白名单注入预制代码；用户输入时不传,
+                    // 严格走原 LLM 真生成路径
+                    welcomeKey: welcomeKey || undefined,
                     // 上送当前全站主题，让 LLM 生成适配该模式（深/浅底）的配色。
                     // 防御式取值：jsdom 冒烟测试等环境可能没有 app 模块
                     theme: (window.app && window.app.getSiteTheme) ? window.app.getSiteTheme() : 'light'

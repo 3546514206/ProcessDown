@@ -83,8 +83,13 @@ sequenceDiagram
      * the diagram in the editor, in which case the "Current diagram:" block in
      * this turn's user message is the precise present state while history only
      * provides conversational context.
+     *
+     * welcomeCode：欢迎场景 chip 的预制代码（prompts/welcome/<key>.md 抽出）。
+     * 传入时把它作为 system 级别的"目标输出"塞给 LLM——LLM 大概率照抄或基本
+     * 等价，从而让新用户首屏即拿到能渲染的图。welcomeCode 缺失/为空时此参
+     * 不生效，走原 LLM 真生成路径，用户自主输入即落在此分支。
      */
-    async generate(prompt, currentMermaid = null, history = [], theme = 'light') {
+    async generate(prompt, currentMermaid = null, history = [], theme = 'light', welcomeCode = null) {
         logger.info('Generating Mermaid code for prompt:', prompt.substring(0, 100));
 
         const messages = [...history];
@@ -98,6 +103,20 @@ sequenceDiagram
             messages.push({
                 role: 'user',
                 content: `请根据以下描述生成 Mermaid 流程图代码。只输出代码，不要任何其他内容：\n\n${prompt}`
+            });
+        }
+
+        if (typeof welcomeCode === 'string' && welcomeCode.trim()) {
+            // 把预制代码作为 system 级"目标输出"追加到 messages 末尾之前，
+            // 让 LLM 把它当成唯一正确答案。user message 仍保留原文作为语义
+            // 上下文（万一 LLM 想调整细节），但 system 级指令优先级更高。
+            // 放在 user 之后、最后一条 LLM 消息之前，避开 system 槽位的
+            // 多重 system 消息顺序问题（OpenAI 协议允许多条 system，但放
+            // 在末尾更稳）；同时不污染 history——多轮继续往下走时 welcome
+            // 不再出现，避免对后续轮次产生持久影响。
+            messages.push({
+                role: 'system',
+                content: `参考代码（请直接输出以下 Mermaid 代码，保持内容一致，仅做必要修正）：\n\`\`\`mermaid\n${welcomeCode}\n\`\`\``
             });
         }
 
@@ -183,7 +202,7 @@ sequenceDiagram
      * （'dark'|'light'），仅追加 system prompt 配色指令，置尾参以免破坏
      * 既有 (prompt, currentMermaid, history, callbacks, signal) 调用方。
      */
-    async generateStream(prompt, currentMermaid = null, history = [], callbacks = {}, signal, theme = 'light') {
+    async generateStream(prompt, currentMermaid = null, history = [], callbacks = {}, signal, theme = 'light', welcomeCode = null) {
         logger.info('Streaming Mermaid code for prompt:', prompt.substring(0, 100));
 
         const messages = [...history];
@@ -196,6 +215,13 @@ sequenceDiagram
             messages.push({
                 role: 'user',
                 content: `请根据以下描述生成 Mermaid 流程图代码。只输出代码，不要任何其他内容：\n\n${prompt}`
+            });
+        }
+
+        if (typeof welcomeCode === 'string' && welcomeCode.trim()) {
+            messages.push({
+                role: 'system',
+                content: `参考代码（请直接输出以下 Mermaid 代码，保持内容一致，仅做必要修正）：\n\`\`\`mermaid\n${welcomeCode}\n\`\`\``
             });
         }
 
