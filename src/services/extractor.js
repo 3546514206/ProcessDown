@@ -18,6 +18,9 @@ function extractMermaidCode(text) {
     // 兼容 OpenAI 协议的 <think> 深度思考标签：剥离标签及其内容
     text = text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
+    // 剥离后端可能泄漏的 LLM 特殊 token 字面量（如 end-of-sentence 标记）
+    text = stripLlmSpecialTokens(text);
+
     logger.debug('Extracting Mermaid code from response, length:', text.length);
 
     // Try to find code block with mermaid language tag
@@ -53,6 +56,20 @@ function extractMermaidCode(text) {
 
     logger.warn('Could not extract Mermaid code from response');
     return null;
+}
+
+/**
+ * 剥离 LLM 特殊 token 字面泄漏。生产流式后端（DeepSeek 系，skip_special_tokens
+ * 为 false 的部署）会把 <｜end▁of▁sentence｜> 等特殊 token 作为 content delta 直接
+ * 吐进正文；全角 ｜(U+FF5C) 与 ▁(U+2581) 均非 mermaid 语法字符，ASCII 变体则以
+ * tokenizer 专名锚定（endoftext/im_start/im_end），三者都不可能出现在合法
+ * mermaid 代码中，剥离零风险。注意全角模式不含 \n，无法跨行过匹配。
+ */
+function stripLlmSpecialTokens(text) {
+    if (typeof text !== 'string' || !text) return text;
+    return text
+        .replace(/<｜[^｜\n]*｜>/g, '')
+        .replace(/<\|(?:endoftext|im_start|im_end)\|>/g, '');
 }
 
 /**
@@ -513,6 +530,7 @@ module.exports = {
     validateMermaidCode,
     autoFixMermaidCode,
     stripFrontmatter,
+    stripLlmSpecialTokens,
     fixErdRelationshipLabels,
     fixGitGraphCherryPick,
     fixGitGraphMergeType,

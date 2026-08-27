@@ -5,7 +5,7 @@
 
 const logger = require('../utils/logger');
 const LLMService = require('./llm');
-const { extractMermaidCode, validateMermaidCode, autoFixMermaidCode } = require('./extractor');
+const { extractMermaidCode, validateMermaidCode, autoFixMermaidCode, stripLlmSpecialTokens } = require('./extractor');
 const fs = require('fs');
 const path = require('path');
 
@@ -85,7 +85,7 @@ sequenceDiagram
      * provides conversational context.
      *
      * welcomeCode：欢迎场景 chip 的预制代码（prompts/welcome/<key>.md 抽出）。
-     * 传入时把它作为 system 级别的"目标输出"塞给 LLM——LLM 大概率照抄或基本
+     * 传入时把它并入最后一条 user 消息的 content 末尾——LLM 大概率照抄或基本
      * 等价，从而让新用户首屏即拿到能渲染的图。welcomeCode 缺失/为空时此参
      * 不生效，走原 LLM 真生成路径，用户自主输入即落在此分支。
      */
@@ -107,17 +107,15 @@ sequenceDiagram
         }
 
         if (typeof welcomeCode === 'string' && welcomeCode.trim()) {
-            // 把预制代码作为 system 级"目标输出"追加到 messages 末尾之前，
-            // 让 LLM 把它当成唯一正确答案。user message 仍保留原文作为语义
-            // 上下文（万一 LLM 想调整细节），但 system 级指令优先级更高。
-            // 放在 user 之后、最后一条 LLM 消息之前，避开 system 槽位的
-            // 多重 system 消息顺序问题（OpenAI 协议允许多条 system，但放
-            // 在末尾更稳）；同时不污染 history——多轮继续往下走时 welcome
-            // 不再出现，避免对后续轮次产生持久影响。
-            messages.push({
-                role: 'system',
-                content: `参考代码（请直接输出以下 Mermaid 代码，保持内容一致，仅做必要修正）：\n\`\`\`mermaid\n${welcomeCode}\n\`\`\``
-            });
+            // 预制代码并入最后一条 user 消息，而不是追加尾部 system 消息：生产
+            // DeepSeek 系后端不接受「user 之后再跟 system」的非标准消息排列
+            // （R1 系对 system 角色本就支持不佳），该排列曾导致模型零输出直接
+            // EOS，且流式 delta 泄漏 <｜end▁of▁sentence｜> 字面量（见 extractor
+            // 的 stripLlmSpecialTokens）。并入 user content 对任何 chat template
+            // 都安全，且不污染 history——history 由会话存储读取，这里的合入仅
+            // 存在于本次请求的内存 messages 中。
+            const last = messages[messages.length - 1];
+            last.content += `\n\n参考代码（请直接输出以下 Mermaid 代码，保持内容一致，仅做必要修正）：\n\`\`\`mermaid\n${welcomeCode}\n\`\`\``;
         }
 
         try {
@@ -219,10 +217,15 @@ sequenceDiagram
         }
 
         if (typeof welcomeCode === 'string' && welcomeCode.trim()) {
-            messages.push({
-                role: 'system',
-                content: `参考代码（请直接输出以下 Mermaid 代码，保持内容一致，仅做必要修正）：\n\`\`\`mermaid\n${welcomeCode}\n\`\`\``
-            });
+            // 预制代码并入最后一条 user 消息，而不是追加尾部 system 消息：生产
+            // DeepSeek 系后端不接受「user 之后再跟 system」的非标准消息排列
+            // （R1 系对 system 角色本就支持不佳），该排列曾导致模型零输出直接
+            // EOS，且流式 delta 泄漏 <｜end▁of▁sentence｜> 字面量（见 extractor
+            // 的 stripLlmSpecialTokens）。并入 user content 对任何 chat template
+            // 都安全，且不污染 history--history 由会话存储读取，这里的合入仅
+            // 存在于本次请求的内存 messages 中。
+            const last = messages[messages.length - 1];
+            last.content += `\n\n参考代码（请直接输出以下 Mermaid 代码，保持内容一致，仅做必要修正）：\n\`\`\`mermaid\n${welcomeCode}\n\`\`\``;
         }
 
         let accumulated = '';
@@ -245,7 +248,9 @@ sequenceDiagram
 
         // 流结束：与 generate 链路一致的 extract + autoFix，单一真源
         const extractedCode = extractMermaidCode(accumulated);
-        let finalCode = extractedCode || accumulated;
+        // 回退内容也要过特殊 token 剥离：后端泄漏的 <｜end▁of▁sentence｜> 若混在回退
+        // 串里原样下发，前端 mermaid 渲染必炸（"No diagram type detected"）。
+        let finalCode = extractedCode || stripLlmSpecialTokens(accumulated);
         const fixes = [];
         let extracted = !!extractedCode;
         if (extractedCode) {

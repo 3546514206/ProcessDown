@@ -3,8 +3,10 @@
 // GeneratorService welcomeCode 透传测试：
 // 覆盖 generate / generateStream 在 welcomeCode 传入/不传入时的 messages 构造。
 // mock 掉 GeneratorService.llm.chat 与 chatStream，捕获传给 LLM 的 messages 数组，
-// 断言尾部结构：null/空字符串/纯空白 时不追加 system 消息；非空时追加 system 消息
-// 且 content 含 welcomeCode 与 "参考代码"。
+// 断言：null/空字符串/纯空白 时不注入；非空时预制代码并入最后一条 user 消息的
+// content 末尾（含 "参考代码" 引导语 + welcomeCode 原文 + mermaid fenced block），
+// messages 里不出现任何 role==='system' 的消息--生产 DeepSeek 系后端不接受
+// 「user 之后再跟 system」的非标准消息排列。
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert');
@@ -35,6 +37,31 @@ function createGenerator() {
     return gen;
 }
 
+// 断言注入形态：无 system 消息；最后一条 user 消息同时含原 user 内容、
+// "参考代码" 引导语、welcomeCode 原文与 mermaid fenced block。
+function assertMergedIntoLastUser(messages, originalSnippet, welcomeCode) {
+    assert.ok(!messages.some(m => m.role === 'system'),
+        '不应有任何 role==="system" 的消息（welcomeCode 应并入 user content）');
+    const last = messages[messages.length - 1];
+    assert.strictEqual(last.role, 'user', '最后一条消息应是 user');
+    assert.ok(last.content.includes(originalSnippet),
+        'user 消息应保留原 user 内容（prompt / Current diagram 块）');
+    assert.ok(last.content.includes('参考代码'),
+        'user 消息应包含 "参考代码" 引导语');
+    assert.ok(last.content.includes(welcomeCode),
+        'user 消息应包含 welcomeCode 原文');
+    assert.ok(last.content.includes('```mermaid'),
+        'user 消息应含 mermaid 代码块包裹');
+}
+
+// 断言未注入形态：无 system 消息，且任何消息 content 都不含 "参考代码"。
+function assertNotInjected(messages) {
+    assert.ok(!messages.some(m => m.role === 'system'),
+        '不应有任何 role==="system" 的消息');
+    assert.ok(!messages.some(m => typeof m.content === 'string' && m.content.includes('参考代码')),
+        '未传有效 welcomeCode 时 user 消息不应含 "参考代码" 注入块');
+}
+
 describe('GeneratorService welcomeCode 注入', () => {
     describe('generate()', () => {
         it('welcomeCode=null: messages 末尾是 user，无 system', async () => {
@@ -51,7 +78,7 @@ describe('GeneratorService welcomeCode 注入', () => {
                 'welcomeCode=null 时不应追加 system 消息');
         });
 
-        it('welcomeCode=缺省 (未传): 同 null，不追加 system', async () => {
+        it('welcomeCode=缺省 (未传): 同 null，不注入', async () => {
             const gen = createGenerator();
             await gen.generate('画个流程图');
 
@@ -59,60 +86,48 @@ describe('GeneratorService welcomeCode 注入', () => {
                 '缺省 welcomeCode 应等同 null');
         });
 
-        it('welcomeCode="flowchart TD\\nA-->B": messages 末尾追加 system 消息', async () => {
+        it('welcomeCode="flowchart TD\\nA-->B": 并入最后一条 user 消息，无 system 消息', async () => {
             const gen = createGenerator();
             const welcomeCode = 'flowchart TD\nA-->B';
             await gen.generate('画个流程图', null, [], 'light', welcomeCode);
 
-            assert.strictEqual(gen.capturedMessages.length, 2,
-                '应追加 1 条 system 消息（user + system）');
-            const last = gen.capturedMessages[gen.capturedMessages.length - 1];
-            assert.strictEqual(last.role, 'system', '末尾应是 system 消息');
-            assert.ok(last.content.includes('参考代码'),
-                'system 消息应包含 "参考代码" 引导语');
-            assert.ok(last.content.includes('flowchart TD'),
-                'system 消息应含 welcomeCode 文本');
-            assert.ok(last.content.includes('```mermaid'),
-                'system 消息应含 mermaid 代码块包裹');
+            assert.strictEqual(gen.capturedMessages.length, 1,
+                '注入不应增加消息条数（仍是那 1 条 user）');
+            assertMergedIntoLastUser(gen.capturedMessages, '画个流程图', welcomeCode);
         });
 
-        it('welcomeCode=空字符串 "": 不追加 system 消息', async () => {
+        it('welcomeCode=空字符串 "": 不注入', async () => {
             const gen = createGenerator();
             await gen.generate('画个流程图', null, [], 'light', '');
 
-            assert.ok(!gen.capturedMessages.some(m => m.role === 'system'),
-                '空字符串应视为未传');
+            assertNotInjected(gen.capturedMessages);
         });
 
-        it('welcomeCode="   " (纯空白): 不追加 system 消息', async () => {
+        it('welcomeCode="   " (纯空白): 不注入', async () => {
             const gen = createGenerator();
             await gen.generate('画个流程图', null, [], 'light', '   ');
 
-            assert.ok(!gen.capturedMessages.some(m => m.role === 'system'),
-                '纯空白应视为未传');
+            assertNotInjected(gen.capturedMessages);
         });
 
-        it('welcomeCode="\\n\\t\\n" (混合空白): 不追加 system 消息', async () => {
+        it('welcomeCode="\\n\\t\\n" (混合空白): 不注入', async () => {
             const gen = createGenerator();
             await gen.generate('画个流程图', null, [], 'light', '\n\t\n');
 
-            assert.ok(!gen.capturedMessages.some(m => m.role === 'system'),
-                '混合空白应视为未传');
+            assertNotInjected(gen.capturedMessages);
         });
 
-        it('welcomeCode 与 currentMermaid 共存: messages 顺序 [user (含 currentMermaid), system (含 welcomeCode)]', async () => {
+        it('welcomeCode 与 currentMermaid 共存: 单条 user 消息同时含 Current diagram 块与 welcomeCode', async () => {
             const gen = createGenerator();
-            await gen.generate('改成深色', 'flowchart LR\nX-->Y', [], 'dark', 'flowchart TD\nA-->B');
+            const welcomeCode = 'flowchart TD\nA-->B';
+            await gen.generate('改成深色', 'flowchart LR\nX-->Y', [], 'dark', welcomeCode);
 
-            assert.strictEqual(gen.capturedMessages.length, 2);
+            assert.strictEqual(gen.capturedMessages.length, 1);
             assert.strictEqual(gen.capturedMessages[0].role, 'user');
-            assert.ok(gen.capturedMessages[0].content.includes('Current diagram'),
-                'first user 消息应包含 currentMermaid');
-            assert.strictEqual(gen.capturedMessages[1].role, 'system');
-            assert.ok(gen.capturedMessages[1].content.includes('flowchart TD\nA-->B'));
+            assertMergedIntoLastUser(gen.capturedMessages, 'Current diagram', welcomeCode);
         });
 
-        it('welcomeCode 与 history 共存: system 消息追加在 history + user 之后（不污染 history）', async () => {
+        it('welcomeCode 与 history 共存: 并入最后一条 user 消息（history 条目不被修改）', async () => {
             const gen = createGenerator();
             const history = [
                 { role: 'user', content: '上一轮提示词' },
@@ -120,17 +135,20 @@ describe('GeneratorService welcomeCode 注入', () => {
             ];
             await gen.generate('新一轮', null, history, 'light', 'flowchart TD\nA-->B');
 
-            assert.strictEqual(gen.capturedMessages.length, 4);
+            assert.strictEqual(gen.capturedMessages.length, 3);
             assert.deepStrictEqual(
                 gen.capturedMessages.map(m => m.role),
-                ['user', 'assistant', 'user', 'system'],
-                'history 完整保留 + 新 user + 追加 system'
+                ['user', 'assistant', 'user'],
+                'history 完整保留 + 新 user（注入不增加消息条数）'
             );
             // history 内容不被修改
             assert.strictEqual(gen.capturedMessages[0].content, '上一轮提示词');
             assert.strictEqual(gen.capturedMessages[1].content, '上一轮图表');
-            // 末尾 system 是新加的
-            assert.ok(gen.capturedMessages[3].content.includes('参考代码'));
+            // 注入落在最后一条（新构造的）user 消息上
+            assert.ok(gen.capturedMessages[2].content.includes('新一轮'),
+                '新 user 消息应保留本轮 prompt 原文');
+            assert.ok(gen.capturedMessages[2].content.includes('参考代码'),
+                '新 user 消息应含注入块');
         });
 
         it('welcomeCode 传入时 LLM 收到的 system prompt 仍带 theme 适配指令', async () => {
@@ -139,9 +157,9 @@ describe('GeneratorService welcomeCode 注入', () => {
 
             assert.ok(gen.capturedSystem.includes('深色主题'),
                 'theme=dark 应追加深色配色指令');
-            // 同时确认是末尾追加了 system 消息，system prompt 本身（主题指令）保持原样
-            const sysMsg = gen.capturedMessages.find(m => m.role === 'system');
-            assert.ok(sysMsg.content.includes('参考代码'));
+            // 注入并入 user content，system prompt 本身（主题指令）保持原样
+            const last = gen.capturedMessages[gen.capturedMessages.length - 1];
+            assert.ok(last.content.includes('参考代码'));
         });
     });
 
@@ -163,7 +181,7 @@ describe('GeneratorService welcomeCode 注入', () => {
             assert.ok(onDoneArg, 'onDone 应被回调');
         });
 
-        it('welcomeCode="flowchart TD\\nA-->B": messages 末尾追加 system 消息', async () => {
+        it('welcomeCode="flowchart TD\\nA-->B": 并入最后一条 user 消息，无 system 消息', async () => {
             const gen = createGenerator();
             const welcomeCode = 'flowchart TD\nA-->B';
             await gen.generateStream('画个流程图', null, [], {
@@ -171,33 +189,29 @@ describe('GeneratorService welcomeCode 注入', () => {
                 onDone: () => {}
             }, undefined, 'light', welcomeCode);
 
-            assert.strictEqual(gen.capturedMessages.length, 2);
-            const last = gen.capturedMessages[gen.capturedMessages.length - 1];
-            assert.strictEqual(last.role, 'system');
-            assert.ok(last.content.includes('参考代码'));
-            assert.ok(last.content.includes('flowchart TD'));
+            assert.strictEqual(gen.capturedMessages.length, 1,
+                '注入不应增加消息条数（仍是那 1 条 user）');
+            assertMergedIntoLastUser(gen.capturedMessages, '画个流程图', welcomeCode);
         });
 
-        it('welcomeCode=空字符串 "": 不追加 system 消息', async () => {
+        it('welcomeCode=空字符串 "": 不注入', async () => {
             const gen = createGenerator();
             await gen.generateStream('画个流程图', null, [], {
                 onContent: () => {},
                 onDone: () => {}
             }, undefined, 'light', '');
 
-            assert.ok(!gen.capturedMessages.some(m => m.role === 'system'),
-                '空字符串应视为未传');
+            assertNotInjected(gen.capturedMessages);
         });
 
-        it('welcomeCode="   " (纯空白): 不追加 system 消息', async () => {
+        it('welcomeCode="   " (纯空白): 不注入', async () => {
             const gen = createGenerator();
             await gen.generateStream('画个流程图', null, [], {
                 onContent: () => {},
                 onDone: () => {}
             }, undefined, 'light', '   ');
 
-            assert.ok(!gen.capturedMessages.some(m => m.role === 'system'),
-                '纯空白应视为未传');
+            assertNotInjected(gen.capturedMessages);
         });
 
         it('welcomeCode 传入时 history 不被污染', async () => {
@@ -211,11 +225,12 @@ describe('GeneratorService welcomeCode 注入', () => {
                 onDone: () => {}
             }, undefined, 'light', 'flowchart TD\nA-->B');
 
-            // 不污染 history: 仅末尾追加 system；前 2 条 history 完整保留
-            assert.strictEqual(gen.capturedMessages.length, 4);
+            // 不污染 history: 注入只落在最后一条新构造的 user 消息上，前 2 条 history 完整保留
+            assert.strictEqual(gen.capturedMessages.length, 3);
             assert.strictEqual(gen.capturedMessages[0].content, 'prev');
             assert.strictEqual(gen.capturedMessages[1].content, 'flowchart LR\n  P-->Q');
-            assert.strictEqual(gen.capturedMessages[3].role, 'system');
+            assert.strictEqual(gen.capturedMessages[2].role, 'user');
+            assert.ok(gen.capturedMessages[2].content.includes('参考代码'));
         });
     });
 });
