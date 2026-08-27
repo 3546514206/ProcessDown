@@ -161,8 +161,9 @@ const chat = {
         // 点击 header 折叠/展开
         thinkHeader.addEventListener('click', () => thinkBlock.classList.toggle('collapsed'));
 
-        // 代码块（<details> 默认折叠，零 JS 展开）
+        // 代码块（<details> 默认展开：AI 输出的代码是用户主要消费对象，省一次点击）
         const details = document.createElement('details');
+        details.open = true;
         details.className = 'code-details';
         const summary = document.createElement('summary');
         summary.innerHTML = '<svg class="think-chevron" viewBox="0 0 24 24" width="12" height="12"><path d="M7 10l5 5 5-5z"/></svg><span>Mermaid 代码</span>';
