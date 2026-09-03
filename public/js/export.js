@@ -241,9 +241,21 @@ const exportModule = {
             const result = await window.mermaid.render(renderId, code);
             const svgString = result && result.svg;
             if (!svgString) throw new Error('渲染未产出 SVG');
+            // foreignObject → text 转换：mermaid 11.x 的 flowchart / stateDiagram-v2 /
+            // classDiagram / erDiagram / pie / gantt / C4* 等图表默认把节点文字塞进
+            // <foreignObject><div xmlns=...xhtml>，但 vendored visio 库的 captureSvgToDisplayList
+            // 只 walk <text> + 7 种基本图元（见 public/vendor/mermaid-to-visio.esm.js
+            // SKIP_ANCESTORS / polyFor），<div> 子树直接丢 → vsdx 空白。**在喂给 holder
+            // 之前**先把 svgString 字符串归一化成纯 <text>/<tspan> 形态（与 PNG 端共用同一
+            // 函数 src/utils/svgForeignObjectToText.js 的浏览器版，逻辑一致）。不依赖
+            // mermaid 配置切换（htmlLabels:false 已被 mermaid 11.x deprecate，且只对
+            // flowchart 生效），属于输出端兜底，对所有图表类型普适。
+            const visioSafeSvg = window.svgForeignObjectToText
+                ? window.svgForeignObjectToText.convertForeignObjectToText(svgString)
+                : svgString;
             // 把 svg 串塞进离屏 holder：库要吃挂在 document 里的 svg DOM 元素才能
             // getBBox 拿到像素尺寸（脱离 DOM 的 detached SVG 多数浏览器补 0）
-            holder.innerHTML = svgString;
+            holder.innerHTML = visioSafeSvg;
             const svgEl = holder.querySelector('svg');
             if (!svgEl) throw new Error('未找到 SVG 节点');
 

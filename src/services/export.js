@@ -9,6 +9,11 @@ const fs = require('fs');
 const path = require('path');
 const { Resvg, initWasm } = require('@resvg/resvg-wasm');
 const logger = require('../utils/logger');
+// foreignObject → text：mermaid 11.x 把 flowchart / stateDiagram-v2 等图表的节点
+// 文字塞进 <foreignObject><div xmlns=...xhtml>，但 resvg-wasm（SVG 1.1 子集实现）
+// 直接跳过 foreignObject 子树 → PNG 导出空白。归一化为原生 <text>/<tspan> 后 resvg
+// 能正确栅化中文。详见 svgForeignObjectToText.js 顶部注释。
+const { convertForeignObjectToText } = require('../utils/svgForeignObjectToText');
 
 const FONT_PATH = path.join(__dirname, '../../assets/fonts/SourceHanSansSC-Regular.otf');
 const WASM_PATH = require.resolve('@resvg/resvg-wasm/index_bg.wasm');
@@ -66,7 +71,7 @@ class ExportService {
             );
         }
 
-        const normalizedSvg = normalizeFontFamily(svgString);
+        const normalizedSvg = convertForeignObjectToText(normalizeFontFamily(svgString));
 
         const options = {
             fitTo: { mode: 'zoom', value: scale },

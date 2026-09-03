@@ -57,7 +57,8 @@ function loadPage(opts = {}) {
     w.URL.revokeObjectURL = w.URL.revokeObjectURL || (() => {});
 
     // 顺序加载所有脚本（index.html 中顺序固定；export.js 也纳入本测试）
-    const scripts = ['app.js', 'chat.js', 'mermaid-render.js', 'components.js', 'export.js'];
+    // svg-foreignobject-to-text.js 必须在 export.js 之前——exportVisio 调用 window.svgForeignObjectToText
+    const scripts = ['app.js', 'chat.js', 'mermaid-render.js', 'components.js', 'svg-foreignobject-to-text.js', 'export.js'];
     for (const s of scripts) {
         const code = fs.readFileSync(path.join(ROOT, 'public', 'js', s), 'utf8');
         try {
@@ -185,5 +186,54 @@ describe('Visio (.vsdx) 导出按钮烟雾测试', () => {
         assert.ok(window.__lastToast && /导出 Visio 失败/.test(window.__lastToast.msg)
             && window.__lastToast.msg.includes('mock lib failure'),
             '失败 toast 必须带原 error.message，实际 ' + JSON.stringify(window.__lastToast));
+    });
+
+    it('mermaid 渲染含 foreignObject 的 SVG 时，exportVisio 链路会调 svgForeignObjectToText.convertForeignObjectToText', async () => {
+        // 验集成：mermaid 11.x 默认把 flowchart / stateDiagram-v2 / classDiagram 等
+        // 图表文字塞进 <foreignObject>。修前 vendored visio 库抽不到这些文字 → vsdx
+        // 空白。修后 exportVisio 必须在喂给 holder 之前先过一遍 convertForeignObjectToText。
+        const FO_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 100">' +
+            '<foreignObject x="10" y="10" width="80" height="40">' +
+            '<div xmlns="http://www.w3.org/1999/xhtml" style="font-size:14px"><p>节点A</p></div>' +
+            '</foreignObject></svg>';
+        const { window, calls } = loadPage();
+        window.mermaid.render = async (id, code) => {
+            calls.push(['render', id, code]);
+            return { svg: FO_SVG };
+        };
+        // spy svgForeignObjectToText（覆盖 window 上的真实函数，记录调用）
+        let foCallCount = 0;
+        let lastFoInput = null;
+        const realFn = window.svgForeignObjectToText.convertForeignObjectToText;
+        window.svgForeignObjectToText.convertForeignObjectToText = (s) => {
+            foCallCount += 1;
+            lastFoInput = s;
+            return realFn(s);
+        };
+        // mock lib 抓 svgEl 的 outerHTML 以校验最终喂给 svgElementToVsdx 的 SVG 已不含 foreignObject
+        let capturedSvgHtml = null;
+        window.exportModule._loadVisioLib = async () => ({
+            svgElementToVsdx: async (svgEl) => {
+                capturedSvgHtml = svgEl.outerHTML;
+                return { bytes: new Uint8Array([0x50, 0x4b]) };
+            }
+        });
+        window.app.showToast = () => {};
+        window.chat = { currentMermaid: 'flowchart TD\nA-->B', isStreaming: false };
+
+        await window.exportModule.exportVisio.call(window.exportModule);
+
+        assert.ok(foCallCount >= 1,
+            'exportVisio 应至少调用一次 convertForeignObjectToText，实际 ' + foCallCount);
+        assert.ok(lastFoInput && /<foreignObject/i.test(lastFoInput),
+            'spy 收到的入参应是 mermaid 原始含 foreignObject 的 SVG');
+        assert.ok(capturedSvgHtml, 'svgElementToVsdx 必须被调用');
+        assert.ok(!/<foreignObject/i.test(capturedSvgHtml),
+            '最终喂给 svgElementToVsdx 的 SVG 已不含 foreignObject，实际: ' + capturedSvgHtml.slice(0, 200));
+        assert.ok(/<text\b/.test(capturedSvgHtml),
+            '最终 SVG 应含 <text>，实际: ' + capturedSvgHtml.slice(0, 200));
+        // 文本内容应保留
+        assert.ok(/节点A/.test(capturedSvgHtml),
+            '中文"节点A"应保留在转换后的 SVG 中');
     });
 });

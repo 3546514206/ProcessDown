@@ -162,6 +162,34 @@ stateDiagram-v2
 
 ---
 
+## foreignObject 文字丢失修复验证清单
+
+> **背景**：2026-09 用户报 flowchart / stateDiagram-v2 / classDiagram / erDiagram /
+> pie / gantt / C4* 等图表导出的 PNG / vsdx 文字丢失。根因：mermaid 11.x 默认把
+> 节点文字塞进 `<foreignObject><div xmlns=...xhtml>`，resvg-wasm 与 vendored
+> `@klyratech/mermaid-to-visio` 都不解析 XHTML 子树（resvg 跳过 / visio 库只 walk
+> `<text>`）。修复：`src/utils/svgForeignObjectToText.js`（regex 归一化为
+> `<text>` + `<tspan>`）在 PNG / Visio 两条链路出口前调用。
+
+**逐类型验证**（输出文件用人眼 + Visio 客户端打开确认文字可见）：
+
+- [ ] **mindmap** 类型 vsdx 文字可见（验证集已通过——mermaid 默认走 `<text>`）
+- [ ] **stateDiagram-v2** 类型 vsdx 文字可见（state 图 jsdom 下走 foreignObject，
+      真实浏览器下归一化路径生效）
+- [ ] **classDiagram** 类型 vsdx 文字可见
+- [ ] **erDiagram** 类型 vsdx 文字可见
+- [ ] **pie** 类型 vsdx 文字可见
+- [ ] **gantt** 类型 vsdx 文字可见
+- [ ] **flowchart** 类型 vsdx 文字仍可见（不能因为 B1 修复回退）
+- [ ] **PNG 端**（`/api/export/png`）：同一组 mermaid 定义渲染的 PNG 中文字清晰
+      可读，可用 `node tests/export.test.js` 跑缩放矩阵后 `open /tmp/export-test-*x.png` 人眼复核
+- [ ] 边界：含 `<br>` 多行文字节点正确切行（中文 + ASCII 混合）
+- [ ] 边界：空 foreignObject 不会产生 `<text>` 残留
+
+**不通过标准**：vsdx 文字框为空 / PNG 文字区域完全空白
+
+---
+
 ## 沙箱限制说明
 
 jsdom 缺 SVG 测量 API（`getBBox` / `getComputedTextLength` / `getTotalLength` 等），
